@@ -34,10 +34,10 @@ Observed: were all 20 slot buttons dim (unsaved) in Bank 900? ______ Could you l
 | B4 | 5 | `clock`, press Channel III. `ratchet` → 3. `divide` → 2. `clock` to leave. | Button 4 | |
 | B5 | Channel width field | Select Channel IV. `width` → 25. | Button 5 | |
 | B6 | 6 | `clock`, press Channel V. `rotate` → 37. `clock` to leave. | Button 6 | |
-| B7 | 6 | `clock`, press Channel VI. `rotate` → turn up until it stops. `clock` to leave. | Button 7 | Highest value shown: ______ |
-| B8 | 12 | `clock`, press Channel VII. `ratchet` → turn down until it stops. `divide` → turn down until it stops. `clock` to leave. | Button 8 | Lowest ratchet: ____ Lowest divide: ____ |
-| B9 | 12 | Select Channel VIII, Pattern P1. `ratchet` → turn up until it stops. `divide` → turn up until it stops. | Button 9 | Highest ratchet: ____ Highest divide: ____ |
-| B10 | 12 | Select Channel VIII, Pattern P2. `length` → 16. `events` → 12. `rotate` → 10. Then `length` → 8. | Button 10 | Events shown after shrinking: ____ Rotate shown: ____ |
+| B7 | 6 | `clock`, press Channel VI. `rotate` → turn up until it stops. `clock` to leave. | Button 7 | Highest value shown: 999 ______ |
+| B8 | 12 | `clock`, press Channel VII. `ratchet` → turn down until it stops. `divide` → turn down until it stops. `clock` to leave. | Button 8 | Lowest ratchet: 001 ____ Lowest divide: 001 ____ |
+| B9 | 12 | Select Channel VIII, Pattern P1. `ratchet` → turn up until it stops. `divide` → turn up until it stops. | Button 9 | Highest ratchet: 255____ Highest divide: 255____ |
+| B10 | 12 | Select Channel VIII, Pattern P2. `length` → 16. `events` → 12. `rotate` → 10. Then `length` → 8. | Button 10 | Events shown after shrinking: 007____ Rotate shown: 007____ |
 | B11 | clock fields 3, 4, 5, 8 | `clock` (no Channel selected). Encoder → 97 bpm. `divide` → 3. `ratchet` → 5. `width` → 66. `clock` to leave. | Button 11, with clock | |
 | B12 | 3 | `clock`, press `mute` so the Main Clock stops. `clock` to leave. | Button 12, with clock | |
 | B13 | 2, clock fields 6, 7 | `clock`, press `mute` so the clock runs again, `clock` to leave. Patch any steady clock into the clock input. `clock`. `divide` → 7. `ratchet` → 6. `clock` to leave. | Button 13, with clock | |
