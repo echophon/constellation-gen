@@ -83,6 +83,30 @@ An integer clock divider; exists at Pattern, Channel, and Main Clock level.
 **Reset**:
 Returns every Pattern to the start of its loop; the module's output is always a pure function of clock pulses elapsed since the last Reset.
 
+### Generation
+
+**Genre**:
+A named style that the generator can draw Save Slots in: a BPM range, a swing range, and one Role per Channel.
+
+**Role**:
+What one Channel is for within a Genre (kick, clap, closed hat, bass gate), with the Recipes it can be played by.
+_Avoid_: Voice (a voice is the sound a Channel triggers), track
+
+**Recipe**:
+One way of playing a Role: a Logic, a Channel Clock, and a list of Layers.
+
+**Layer**:
+One or more Patterns of a Recipe that are drawn, kept and rerolled together. Its tier says how much it defines the Genre: anchor, motif, or ornament.
+
+**Fit**:
+The fewest Patterns, and the Logic, that put an Event on exactly the steps of a given grid.
+
+**Genotype**:
+The record of how a Save Slot was generated: its Genre, its seed, and which Recipe and Layer each Pattern came from.
+
+**Sidecar**:
+The file in a Bank's folder (`BANK.JSN`) that holds the Genotypes of its Save Slots.
+
 ### Modulation
 
 **CV Input**:

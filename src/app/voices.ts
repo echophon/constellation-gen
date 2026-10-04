@@ -24,7 +24,7 @@ const v = (type: VoiceType, wave: Wave, level: number, tune: number, decay: numb
   type, wave, level, tune, decay, sustain, release,
 });
 
-/** Follows the manual's Quick Start: kick, snare, closed hat, open hat, rim, then three pitched voices. */
+/** Follows the manual's Quick Start: kick, snare, closed hat, open hat, rim, then two pitched voices and a bass. */
 export const DEFAULT_VOICES: VoiceSettings[] = [
   v('kick', 'sine', -4, 24, 0.25, 0.35, 0.04),
   v('noise', 'sine', -10, 900, 0.12, 0.25, 0.04),
@@ -33,7 +33,8 @@ export const DEFAULT_VOICES: VoiceSettings[] = [
   v('tone', 'triangle', -12, 67, 0.03, 0.4, 0.02),
   v('tone', 'sine', -10, 48, 0.08, 0.6, 0.03),
   v('tone', 'triangle', -12, 55, 0.08, 0.6, 0.03),
-  v('tone', 'square', -20, 60, 0.08, 0.5, 0.03),
+  // C2: Channel VIII is usually a bass gate.
+  v('tone', 'sine', -8, 36, 0.08, 0.6, 0.03),
 ];
 
 const STORE = 'constellation.voices';
@@ -90,6 +91,8 @@ let instance: Voices | null = null;
 export class Voices {
   private readonly out: Tone.ToneAudioNode;
   private readonly voices: Voice[];
+  /** When each Channel's gate last changed; a voice cannot be given two changes at one instant. */
+  private readonly last: number[] = new Array<number>(8).fill(0);
 
   constructor() {
     // Events are scheduled at explicit audio-clock times, so Tone's own look-ahead is not wanted.
@@ -111,7 +114,8 @@ export class Voices {
   /** Opens or closes one Channel's gate at an audio-clock time. */
   gate(channel: number, high: boolean, when: number): void {
     const voice = this.voices[channel]!;
-    const t = Math.max(when, this.now);
+    const t = Math.max(when, this.now, this.last[channel]! + 1e-4);
+    this.last[channel] = t;
     if (high) voice.attack(t);
     else voice.release(t);
   }

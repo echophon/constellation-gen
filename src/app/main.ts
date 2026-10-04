@@ -10,6 +10,9 @@ import {
   type Pattern,
   type SaveSlot,
 } from '../engine/index';
+import { generateBank } from '../gen/generate';
+import { GENRES, genreById } from '../gen/genres';
+import { nextWindow, type Queued } from './lookahead';
 import { moveCursor, parseKey, type Action, type Cursor } from './keys';
 import { buildVoiceEditor } from './voiceEditor';
 import { Voices } from './voices';
@@ -24,6 +27,9 @@ const slotName = (i: number) => names[i]!.slice(-6, -4);
 
 let slotIndex = 0;
 let channel = 0;
+let genreId = GENRES[0]!.id;
+/** The genre and seed the Bank was generated from, if it was. */
+let generatedFrom = '';
 let timeline = new Timeline(bank[0]!);
 let playing = false;
 let stoppedAt = 0;
@@ -31,7 +37,8 @@ let voices: Voices | null = null;
 /** Whether each Channel's gate is open as of the last thing scheduled. */
 const gate: boolean[] = new Array<boolean>(8).fill(false);
 let startedAt = 0;
-let scheduledTo = 0;
+/** How far voices have been queued. */
+const queued: Queued = { loop: 0, to: 0 };
 const undo: { slot: number; text: string }[] = [];
 const redo: { slot: number; text: string }[] = [];
 
@@ -45,10 +52,13 @@ function position(): number {
 
 /** Keeps the playhead where it is when the tempo or the Save Slot changes under it. */
 function reanchor(pos: number) {
-  // scheduledTo is left alone: voices already queued for the next ~120 ms stay
+  // queued.to is left alone: voices already queued for the next ~120 ms stay
   // as they are, and the change is heard from there on. Rewinding it would
   // queue the same voices again on every edit.
-  if (playing && voices) startedAt = voices.now - pulsesToSeconds(slot().clock, pos);
+  if (playing && voices) {
+    startedAt = voices.now - pulsesToSeconds(slot().clock, pos);
+    queued.loop = 0;
+  }
 }
 
 // ---------- editing ----------
@@ -250,6 +260,16 @@ function buildHeader() {
     refreshers.push(() => b.classList.toggle('on', i === slotIndex));
     slots.append(b);
   });
+  const genres = el('select', { title: 'Genre for generate' });
+  for (const g of GENRES) genres.append(el('option', { value: g.id, textContent: g.name }));
+  genres.value = genreId;
+  genres.onchange = () => {
+    genreId = genres.value;
+    // Hand the keyboard back to the editor.
+    genres.blur();
+  };
+  const generate = el('button', { textContent: 'generate', title: generatedFrom || 'Replace the Bank with 20 Save Slots in this genre' });
+  generate.onclick = generateIntoBank;
   const undoBtn = el('button', { textContent: 'undo', title: 'U, or Cmd/Ctrl+Z' });
   undoBtn.onclick = undoLast;
   const save = el('button', { textContent: 'download', title: 'Download this Save Slot as NN.TXT' });
@@ -265,6 +285,8 @@ function buildHeader() {
     el('span', {}, 'Save Slot'),
     slots,
     el('span', { className: 'spacer' }),
+    genres,
+    generate,
     undoBtn,
     save,
   );
@@ -366,7 +388,7 @@ function togglePlay() {
     void voices.resume();
     playing = true;
     reanchor(stoppedAt);
-    scheduledTo = stoppedAt;
+    queued.to = stoppedAt;
   } else {
     playing = false;
     stoppedAt = 0; // stop is also Reset
@@ -382,6 +404,19 @@ function loadSlot(i: number) {
   timeline = new Timeline(slot());
   reanchor(pos);
   build();
+}
+
+/** Replaces every Save Slot in the Bank. Undo does not reach across it. */
+function generateIntoBank() {
+  const genre = genreById(genreId);
+  if (!genre || !confirm(`Replace all ${bank.length} Save Slots with ${genre.name}?`)) return;
+  const seed = Math.floor(Math.random() * 0x100000000);
+  const generated = generateBank(genre, seed);
+  bank.forEach((_, i) => (bank[i] = generated.slots[i]!.slot));
+  generatedFrom = `${genre.name}, seed ${seed}: npm run generate -- ${genre.id} --seed ${seed}`;
+  undo.length = 0;
+  redo.length = 0;
+  loadSlot(slotIndex);
 }
 
 function select(c: number) {
@@ -406,14 +441,9 @@ const redoLast = () => restore(redo, undo);
 function schedule() {
   if (!playing || !voices) return;
   const clock = slot().clock;
-  const loop = pulsesToSeconds(clock, HORIZON);
-  const elapsed = voices.now - startedAt;
-  const base = Math.floor(elapsed / loop) * loop;
-  const now = secondsToPulses(clock, elapsed - base);
-  if (now < scheduledTo - 1) scheduledTo = 0; // wrapped past the horizon
-  const from = Math.max(scheduledTo, now);
-  const to = Math.min(HORIZON, secondsToPulses(clock, elapsed - base + 0.12));
-  if (to <= from) return;
+  const next = nextWindow(clock, voices.now - startedAt, HORIZON, queued);
+  if (!next) return;
+  const { from, to, base } = next;
   const at = (t: number) => startedAt + base + pulsesToSeconds(clock, t);
   for (let c = 0; c < 8; c++) {
     // An edit, a Save Slot switch or the loop wrapping can leave a gate open
@@ -428,7 +458,6 @@ function schedule() {
       gate[c] = e.high;
     }
   }
-  scheduledTo = to;
 }
 
 function closeGates() {

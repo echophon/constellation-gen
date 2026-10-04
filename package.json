@@ -6,6 +6,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "render": "tsx scripts/render.ts",
+    "fit": "tsx scripts/fit.ts",
+    "generate": "tsx scripts/generate.ts",
     "proto:visual": "vite prototype/visual-language --open",
     "dev": "vite",
     "build": "tsc --noEmit && vite build"
