@@ -286,7 +286,7 @@ function buildHeader() {
   amount.onchange = () => amount.blur();
   const evolveBtn = el('button', { textContent: 'evolve', title: 'Vary this Save Slot, keeping what defines it' });
   evolveBtn.onclick = evolveSlot;
-  const undoBtn = el('button', { textContent: 'undo', title: 'U, or Cmd/Ctrl+Z' });
+  const undoBtn = el('button', { textContent: 'undo', title: 'Cmd/Ctrl+Z' });
   undoBtn.onclick = undoLast;
   const save = el('button', { textContent: 'download', title: 'Download the Bank as a zip: unzip it and copy the folder to the card under a Bank number' });
   save.onclick = downloadBank;
@@ -378,7 +378,6 @@ function refresh() {
   const inFields = cursor.level === 'pattern';
   grid.forEach((row, r) => row.forEach((cell, c) => cell.box.classList.toggle('cursor', inFields && r === cursor.row && c === cursor.col)));
   controls.querySelector('.title')?.classList.toggle('cursor', !inFields);
-  status.textContent = pending;
 }
 
 function resize() {
@@ -615,13 +614,7 @@ canvas.onpointerup = canvas.onpointercancel = () => {
   status.textContent = '';
 };
 
-// ---------- keyboard: vim-style motions over the grid of fields ----------
-
-/** Keys typed so far that are waiting for the rest of a command: a count, or g / y. */
-let pending = '';
-let lastBump = 1;
-let yankedPattern: Pattern | null = null;
-let yankedChannel: string | null = null;
+// ---------- keyboard: h j k l over the grid of fields ----------
 
 const cell = () => (cursor.level === 'pattern' ? grid[cursor.row]?.[cursor.col] : undefined);
 const cursorPattern = () => (cursor.level === 'pattern' && cursor.row > 0 ? chan().patterns[cursor.row - 1]! : null);
@@ -630,7 +623,6 @@ const wrap = (v: number, n: number) => ((v % n) + n) % n;
 function bump(delta: number) {
   const c = cell();
   if (!c) return;
-  lastBump = delta;
   const [lo, hi] = c.range();
   const next = clamp(c.get() + delta, lo, hi);
   if (next === c.get()) return;
@@ -638,10 +630,39 @@ function bump(delta: number) {
   c.commit(next);
 }
 
+/** What Cmd/Ctrl+C took: a Pattern from a Pattern row, otherwise the whole Channel. */
+let copied: { pattern: Pattern } | { channel: string } | null = null;
+
+function copy() {
+  const pat = cursorPattern();
+  copied = pat ? { pattern: { ...pat } } : { channel: JSON.stringify(chan()) };
+  status.textContent = pat ? `copied P${cursor.row}` : `copied Channel ${ROMAN[channel]}`;
+}
+
+/** A copied Pattern goes onto the Pattern under the cursor; a copied Channel replaces the selected Channel. */
+function paste() {
+  if (!copied) return;
+  if ('pattern' in copied) {
+    const pat = cursorPattern();
+    if (!pat) {
+      status.textContent = 'move to a Pattern row to paste a Pattern';
+      return;
+    }
+    const from = copied.pattern;
+    checkpoint();
+    edit(() => Object.assign(pat, from));
+  } else {
+    const from = JSON.parse(copied.channel) as Channel;
+    checkpoint();
+    edit(() => (slot().channels[channel] = from));
+  }
+  status.textContent = '';
+  build();
+}
+
 function run(action: Action) {
   switch (action.type) {
-    case 'move':
-    case 'goto': {
+    case 'move': {
       const next = moveCursor(cursor, channel, action, grid.map((row) => row.length));
       cursor = next.cursor;
       if (next.channel !== channel) select(next.channel);
@@ -649,23 +670,6 @@ function run(action: Action) {
     }
     case 'bump':
       return bump(action.delta);
-    case 'repeat':
-      return bump(lastBump);
-    case 'type': {
-      const input = cell()?.input;
-      if (input) {
-        input.focus();
-        input.select();
-      }
-      return;
-    }
-    case 'random': {
-      const c = cell();
-      if (!c) return;
-      const [lo, hi] = c.range();
-      checkpoint();
-      return c.commit(lo + Math.floor(Math.random() * (hi - lo + 1)));
-    }
     case 'mute': {
       // On a Pattern row this mutes the Pattern; on the Channel list or strip, the Channel.
       const pat = cursorPattern();
@@ -673,43 +677,8 @@ function run(action: Action) {
       edit(() => (pat ? setPattern(pat, 'mute', pat.mute ? 0 : 1) : (chan().mute = chan().mute ? 0 : 1)));
       return build();
     }
-    case 'undo':
-      return undoLast();
-    case 'redo':
-      return redoLast();
-    case 'yankPattern': {
-      const pat = cursorPattern();
-      if (pat) yankedPattern = { ...pat };
-      return;
-    }
-    case 'pastePattern': {
-      const pat = cursorPattern();
-      if (!pat || !yankedPattern) return;
-      const copy = yankedPattern;
-      checkpoint();
-      edit(() => Object.assign(pat, copy));
-      return build();
-    }
-    case 'yankChannel':
-      yankedChannel = JSON.stringify(chan());
-      return;
-    case 'pasteChannel': {
-      if (!yankedChannel) return;
-      const copy = JSON.parse(yankedChannel) as Channel;
-      checkpoint();
-      edit(() => (slot().channels[channel] = copy));
-      return build();
-    }
     case 'channel':
       return select(action.index);
-    case 'channelBy':
-      return select(wrap(channel + action.delta, 8));
-    case 'logic':
-      checkpoint();
-      return edit(() => (chan().logic = LOGICS[(LOGICS.indexOf(chan().logic) + 1) % LOGICS.length]!));
-    case 'flop':
-      checkpoint();
-      return edit(() => (chan().flop = chan().flop ? 0 : 1));
     case 'slotBy':
       return loadSlot(wrap(slotIndex + action.delta, bank.length));
     case 'play':
@@ -722,12 +691,18 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return e.shiftKey ? redoLast() : undoLast();
   }
-  if (e.metaKey || (e.target as HTMLElement).matches('input, select, textarea, [contenteditable]')) return;
-  if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt') return;
-  const result = parseKey(pending, e.key, e.ctrlKey);
-  pending = result.pending;
-  if (result.handled) e.preventDefault();
-  if (result.action) run(result.action);
+  const inField = (e.target as HTMLElement).matches('input, select, textarea, [contenteditable]');
+  // Copying selected text and pasting into a field stay the browser's.
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && !inField && (e.key === 'c' || e.key === 'v')) {
+    if (e.key === 'c' && !window.getSelection()?.isCollapsed) return;
+    e.preventDefault();
+    return e.key === 'c' ? copy() : paste();
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey || inField) return;
+  const action = parseKey(e.key);
+  if (!action) return;
+  e.preventDefault();
+  run(action);
   refresh();
 });
 

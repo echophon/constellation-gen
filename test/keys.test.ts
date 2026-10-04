@@ -1,22 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { moveCursor, parseKey, type Action, type Cursor } from '../src/app/keys';
-
-/** Feeds keys one at a time and returns the Actions they produce. */
-function type(...keys: string[]): Action[] {
-  const actions: Action[] = [];
-  let pending = '';
-  for (const key of keys) {
-    const ctrl = key.startsWith('^');
-    const result = parseKey(pending, ctrl ? key.slice(1) : key, ctrl);
-    pending = result.pending;
-    if (result.action) actions.push(result.action);
-  }
-  return actions;
-}
+import { moveCursor, parseKey, type Cursor } from '../src/app/keys';
 
 describe('parseKey', () => {
   it('moves with h j k l', () => {
-    expect(type('h', 'j', 'k', 'l')).toEqual([
+    expect(['h', 'j', 'k', 'l'].map(parseKey)).toEqual([
       { type: 'move', rows: 0, cols: -1 },
       { type: 'move', rows: 1, cols: 0 },
       { type: 'move', rows: -1, cols: 0 },
@@ -24,67 +11,43 @@ describe('parseKey', () => {
     ]);
   });
 
+  it('moves with the arrow keys too', () => {
+    expect(['ArrowLeft', 'ArrowDown', 'ArrowUp', 'ArrowRight'].map(parseKey)).toEqual(['h', 'j', 'k', 'l'].map(parseKey));
+  });
+
   it('raises with i and lowers with u', () => {
-    expect(type('i', 'u')).toEqual([
+    expect(['i', 'u'].map(parseKey)).toEqual([
       { type: 'bump', delta: 1 },
       { type: 'bump', delta: -1 },
     ]);
   });
 
-  it('takes a count before any key', () => {
-    expect(type('5', 'i')).toEqual([{ type: 'bump', delta: 5 }]);
-    expect(type('2', '0', 'u')).toEqual([{ type: 'bump', delta: -20 }]);
-    expect(type('3', 'j')).toEqual([{ type: 'move', rows: 3, cols: 0 }]);
+  it('selects a Channel with 1 to 8', () => {
+    expect(parseKey('1')).toEqual({ type: 'channel', index: 0 });
+    expect(parseKey('8')).toEqual({ type: 'channel', index: 7 });
+    expect(parseKey('9')).toBeNull();
+    expect(parseKey('0')).toBeNull();
   });
 
-  it('reads 0 as "first field" unless a count is under way', () => {
-    expect(type('0')).toEqual([{ type: 'move', rows: 0, cols: -Infinity }]);
-    expect(type('1', '0', 'l')).toEqual([{ type: 'move', rows: 0, cols: 10 }]);
-  });
-
-  it('keeps the vim increments and + - as well', () => {
-    expect(type('^a', '^x', '+', '-')).toEqual([
-      { type: 'bump', delta: 1 },
-      { type: 'bump', delta: -1 },
-      { type: 'bump', delta: 1 },
-      { type: 'bump', delta: -1 },
+  it('steps through Save Slots with [ and ]', () => {
+    expect(['[', ']'].map(parseKey)).toEqual([
+      { type: 'slotBy', delta: -1 },
+      { type: 'slotBy', delta: 1 },
     ]);
   });
 
-  it('goes to Channels with gt', () => {
-    expect(type('g', 't')).toEqual([{ type: 'channelBy', delta: 1 }]);
-    expect(type('g', 'T')).toEqual([{ type: 'channelBy', delta: -1 }]);
-    expect(type('3', 'g', 't')).toEqual([{ type: 'channel', index: 2 }]);
-    expect(type('9', 'g', 't')).toEqual([{ type: 'channel', index: 7 }]);
+  it('plays and stops with space', () => {
+    expect(parseKey(' ')).toEqual({ type: 'play' });
   });
 
-  it('handles gg, G and a counted G', () => {
-    expect(type('g', 'g')).toEqual([{ type: 'move', rows: -Infinity, cols: 0 }]);
-    expect(type('G')).toEqual([{ type: 'move', rows: Infinity, cols: 0 }]);
-    expect(type('3', 'G')).toEqual([{ type: 'goto', row: 3 }]);
+  it('mutes with m or x', () => {
+    expect(['m', 'x'].map(parseKey)).toEqual([{ type: 'mute' }, { type: 'mute' }]);
   });
 
-  it('copies with yy and pastes with p', () => {
-    expect(type('y', 'y', 'p', 'Y', 'P').map((a) => a.type)).toEqual(['yankPattern', 'pastePattern', 'yankChannel', 'pasteChannel']);
-  });
-
-  it('undoes with U and redoes with ctrl-r', () => {
-    expect(type('U', '^r').map((a) => a.type)).toEqual(['undo', 'redo']);
-  });
-
-  it('types a value with enter or c', () => {
-    expect(type('Enter', 'c').map((a) => a.type)).toEqual(['type', 'type']);
-  });
-
-  it('drops a half-typed command on escape or an unknown key', () => {
-    expect(parseKey('3g', 'Escape')).toEqual({ pending: '', handled: true });
-    expect(parseKey('g', 'q')).toEqual({ pending: '', handled: false });
-    expect(parseKey('', 'q').handled).toBe(false);
-  });
-
-  it('shows the pending count and prefix', () => {
-    expect(parseKey('', '3').pending).toBe('3');
-    expect(parseKey('3', 'g').pending).toBe('3g');
+  it('leaves every other key to the browser', () => {
+    for (const key of ['g', 'y', 'p', 'c', 'R', 'U', 'G', 'Y', 'P', '.', '+', '-', '$', 'Enter', 'Escape', 'Tab']) {
+      expect(parseKey(key), key).toBeNull();
+    }
   });
 });
 
@@ -102,8 +65,7 @@ describe('moveCursor', () => {
   it('stops at the last field and the last row', () => {
     expect(move(at(1, 6), 0, 1).cursor).toEqual(at(1, 6));
     expect(move(at(8, 0), 1, 0).cursor).toEqual(at(8, 0));
-    expect(move(at(1, 0), 0, Infinity).cursor).toEqual(at(1, 6));
-    expect(move(at(5, 3), -Infinity, 0).cursor).toEqual(at(0, 3));
+    expect(move(at(0, 3), -1, 0).cursor).toEqual(at(0, 3));
   });
 
   it('pulls the column in when the new row is shorter', () => {
@@ -115,10 +77,6 @@ describe('moveCursor', () => {
     expect(move(at(1, 0), 0, -1)).toEqual({ cursor: at(1, 0, 'channel'), channel: 2 });
     expect(move(at(1, 2), 0, -5).cursor.level).toBe('channel');
     expect(move(at(3, 0), 0, -1).cursor.level).toBe('channel');
-  });
-
-  it('does not leave the fields on 0', () => {
-    expect(move(at(1, 4), 0, -Infinity).cursor).toEqual(at(1, 0));
   });
 
   it('steps through Channels with j and k at Channel level, without wrapping', () => {
@@ -134,11 +92,5 @@ describe('moveCursor', () => {
 
   it('ignores h at Channel level', () => {
     expect(move(at(1, 0, 'channel'), 0, -1)).toEqual({ cursor: at(1, 0, 'channel'), channel: 2 });
-  });
-
-  it('goes to a numbered Pattern, or a numbered Channel at Channel level', () => {
-    expect(moveCursor(at(1, 6), 2, { type: 'goto', row: 5 }, shape).cursor).toEqual(at(5, 6));
-    expect(moveCursor(at(1, 6), 2, { type: 'goto', row: 3 }, shape).cursor).toEqual(at(3, 0));
-    expect(moveCursor(at(1, 0, 'channel'), 2, { type: 'goto', row: 6 }, shape).channel).toBe(5);
   });
 });
