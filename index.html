@@ -11,33 +11,66 @@
     <main id="stage">
       <canvas id="scope"></canvas>
     </main>
-    <section id="panels">
-      <div id="editor">
-        <div id="controls"></div>
+    <div id="lower">
+      <div id="left">
+        <section id="panels">
+          <div id="editor">
+            <div id="controls"></div>
+          </div>
+        </section>
+        <footer id="legend">
+          <div id="status"></div>
+          <div class="groups">
+            <table>
+              <tr><th colspan="2">Move (or the arrow keys)</th></tr>
+              <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>left / right: mute, then the fields</td></tr>
+              <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>row down / up</td></tr>
+              <tr><td><kbd>h</kbd> past the first stop</td><td>out to the Channel list</td></tr>
+              <tr><td><kbd>j</kbd> <kbd>k</kbd> on the Channel list</td><td>next / previous Channel</td></tr>
+              <tr><td><kbd>l</kbd> on the Channel list</td><td>back into the row</td></tr>
+            </table>
+            <table>
+              <tr><th colspan="2">Change</th></tr>
+              <tr><td><kbd>i</kbd> <kbd>u</kbd></td><td>value up / down; toggle on / off; next / previous Logic</td></tr>
+              <tr><td><kbd>m</kbd> or <kbd>x</kbd></td><td>mute / unmute the Pattern, or the Channel</td></tr>
+              <tr><td>scroll a field</td><td>nudge the value</td></tr>
+              <tr><td>click a label</td><td>randomise the field</td></tr>
+              <tr><td><kbd>cmd/ctrl</kbd>+<kbd>z</kbd></td><td>undo; with <kbd>shift</kbd>, redo</td></tr>
+              <tr><td><kbd>cmd/ctrl</kbd>+<kbd>c</kbd> <kbd>v</kbd></td><td>copy / paste Pattern or Channel</td></tr>
+            </table>
+            <table>
+              <tr><th colspan="2">Channels and Save Slots</th></tr>
+              <tr><td><kbd>1</kbd> – <kbd>8</kbd></td><td>Channel I – VIII</td></tr>
+              <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>previous / next Save Slot</td></tr>
+              <tr><td><kbd>space</kbd></td><td>play / stop (stop resets)</td></tr>
+              <tr><td>click an orbit</td><td>select its Channel</td></tr>
+            </table>
+            <table>
+              <tr><th colspan="2">Mouse, in a lane</th></tr>
+              <tr><td>drag ← →</td><td>Rotate</td></tr>
+              <tr><td>drag ↑ ↓</td><td>Events</td></tr>
+              <tr><td><kbd>shift</kbd> + drag ← →</td><td>Burst</td></tr>
+              <tr><td><kbd>shift</kbd> + drag ↑ ↓</td><td>Ratchet</td></tr>
+              <tr><td><kbd>alt</kbd> + drag</td><td>Chance</td></tr>
+              <tr><td>drag a loop bracket</td><td>Length</td></tr>
+              <tr><td>drag in the step strip</td><td>Divide</td></tr>
+            </table>
+          </div>
+          <p>
+            In a lane: tall bars are Events, short bars are Ratchet repeats, darker bars with a tail are Burst repeats, hollow bars were blocked by Chance.
+            Dashed outlines show where the Events sat before Rotate. The bracket marks each loop start; numbered cells underneath are steps, wider when divided.
+          </p>
+        </footer>
+        <details id="voices">
+          <summary>Voices</summary>
+          <p>Each voice follows its Channel's gate. Sustain is the level held while the gate is open, so Width and Flop are heard as note length; set it to 0 for a plain hit.</p>
+          <div id="voice-editor"></div>
+        </details>
       </div>
-      <details id="voices" open>
-        <summary>Voices</summary>
-        <p>Each voice follows its Channel's gate. Sustain is the level held while the gate is open, so Width and Flop are heard as note length; set it to 0 for a plain hit.</p>
-        <div id="voice-editor"></div>
-      </details>
-    </section>
-    <footer id="legend">
-      <div id="status"></div>
-      <table>
-        <tr><th colspan="2">Move (or the arrow keys)</th><th colspan="2">Change</th><th colspan="2">Channels and Save Slots</th><th colspan="2">Mouse</th></tr>
-        <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>left / right: mute, then the fields</td><td><kbd>i</kbd> <kbd>u</kbd></td><td>value up / down; toggle on / off; next / previous Logic</td><td><kbd>1</kbd> – <kbd>8</kbd></td><td>Channel I – VIII</td><td>drag ← →</td><td>Rotate</td></tr>
-        <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>row down / up</td><td>scroll a field</td><td>nudge the value</td><td><kbd>[</kbd> <kbd>]</kbd></td><td>previous / next Save Slot</td><td>drag ↑ ↓</td><td>Events</td></tr>
-        <tr><td><kbd>h</kbd> past the first stop</td><td>out to the Channel list</td><td>click a label</td><td>randomise the field</td><td><kbd>space</kbd></td><td>play / stop (stop resets)</td><td><kbd>shift</kbd> + drag ← →</td><td>Burst</td></tr>
-        <tr><td><kbd>j</kbd> <kbd>k</kbd> on the Channel list</td><td>next / previous Channel</td><td><kbd>m</kbd> or <kbd>x</kbd></td><td>mute / unmute the Pattern, or the Channel</td><td></td><td></td><td><kbd>shift</kbd> + drag ↑ ↓</td><td>Ratchet</td></tr>
-        <tr><td><kbd>l</kbd> on the Channel list</td><td>back into the row</td><td><kbd>cmd/ctrl</kbd>+<kbd>z</kbd></td><td>undo; with <kbd>shift</kbd>, redo</td><td><kbd>cmd/ctrl</kbd>+<kbd>c</kbd> <kbd>v</kbd></td><td>copy / paste the Pattern under the cursor, or the Channel</td><td><kbd>alt</kbd> + drag</td><td>Chance</td></tr>
-        <tr><td></td><td></td><td></td><td></td><td></td><td></td><td>drag a loop bracket</td><td>Length</td></tr>
-        <tr><td></td><td></td><td></td><td></td><td></td><td></td><td>drag in the step strip</td><td>Divide</td></tr>
-      </table>
-      <p>
-        In a lane: tall bars are Events, short bars are Ratchet repeats, darker bars with a tail are Burst repeats, hollow bars were blocked by Chance.
-        Dashed outlines show where the Events sat before Rotate. The bracket marks each loop start; numbered cells underneath are steps, wider when divided.
-      </p>
-    </footer>
+      <div id="right">
+        <canvas id="sky" title="The Constellation: two bars to a revolution, one orbit per Channel. Click an orbit to select its Channel."></canvas>
+      </div>
+    </div>
     <script type="module" src="/src/app/main.ts"></script>
   </body>
 </html>

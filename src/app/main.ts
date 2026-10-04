@@ -21,6 +21,7 @@ import { moveCursor, parseKey, type Action, type Cursor } from './keys';
 import { buildVoiceEditor } from './voiceEditor';
 import { Voices } from './voices';
 import { GUTTER, ROMAN, SPAN, draw, handleAt, ink, layout, shapeOf, timeAt, type Geometry, type Handle } from './scope';
+import { drawSky, skyChannelAt } from './sky';
 import { HORIZON, Timeline } from './timeline';
 
 // The Bank under edit lives in memory, starting from the factory Bank.
@@ -148,6 +149,10 @@ const header = document.getElementById('header')!;
 const controls = document.getElementById('controls')!;
 const canvas = document.getElementById('scope') as HTMLCanvasElement;
 const g = canvas.getContext('2d')!;
+const sky = document.getElementById('sky') as HTMLCanvasElement;
+const skyG = sky.getContext('2d')!;
+/** Side of the Constellation, in CSS pixels: as large as the right half allows. */
+let skySize = 320;
 const status = document.getElementById('status')!;
 let geo: Geometry;
 /** Run after every edit to bring field values and ranges up to date without rebuilding them. */
@@ -381,6 +386,13 @@ function refresh() {
 }
 
 function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  skySize = Math.round(Math.min(680, Math.max(240, sky.parentElement!.clientWidth - 24)));
+  if (sky.width !== skySize * dpr) {
+    sky.width = sky.height = skySize * dpr;
+    sky.style.width = sky.style.height = `${skySize}px`;
+  }
+  skyG.setTransform(dpr, 0, 0, dpr, 0, 0);
   const width = Math.max(900, window.innerWidth);
   geo = layout(slot(), channel, width, position());
   const ratio = window.devicePixelRatio || 1;
@@ -614,6 +626,12 @@ canvas.onpointerup = canvas.onpointercancel = () => {
   status.textContent = '';
 };
 
+sky.onclick = (e) => {
+  const box = sky.getBoundingClientRect();
+  const c = skyChannelAt(skySize, e.clientX - box.left, e.clientY - box.top);
+  if (c >= 0) select(c);
+};
+
 // ---------- keyboard: h j k l over the grid of fields ----------
 
 const cell = () => (cursor.level === 'pattern' ? grid[cursor.row]?.[cursor.col] : undefined);
@@ -711,6 +729,7 @@ function frame() {
   const pos = position();
   geo = { ...geo, page: Math.floor(pos / SPAN) * SPAN };
   draw(g, geo, { slot: slot(), timeline, channel, pos, focus: cursor });
+  drawSky(skyG, skySize, { timeline, channel, pos });
   requestAnimationFrame(frame);
 }
 
