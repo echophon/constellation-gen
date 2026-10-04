@@ -218,7 +218,7 @@ Each Layer carries a **tier**, which is what makes evolve controllable:
 
 Keep the generating choices (a "genotype": genre, recipe ids, drawn values, seed) alongside each Save Slot. The file format has no room for it. The firmware skips unrecognised lines, so a comment line would load, but the module would drop it on its next save. **Decided 2026-10-03: one sidecar file per Bank**, in the Bank's folder beside its Save Slots. A Save Slot edited on the module no longer matches its genotype, so evolve must detect that and fall back to the generic operators below, which work on a bare Save Slot.
 
-**Built** (2026-10-03): the genre data is `src/gen/genres.ts`, the generator `src/gen/generate.ts`, the sidecar `src/gen/sidecar.ts` (`BANK.JSN`, one line per Save Slot, with a hash of the Channel lines to detect edits). `npm run generate -- <genre>` writes a Bank; the app has a genre picker. Feel (swing, Width, delay) is drawn but not yet a Layer, and a generated Bank is still twenty independent draws on one clock: the family layout below waits for evolve.
+**Built** (2026-10-03): the genre data is `src/gen/genres.ts`, the generator `src/gen/generate.ts`, the sidecar `src/gen/sidecar.ts` (`BANK.JSN`, one line per Save Slot, with a hash of the Channel lines to detect edits). `npm run generate -- <genre>` writes a Bank; the app has a genre picker. A generated Bank uses the family layout below.
 
 **Bank layout.** Twenty Save Slots, and Live Mode plays them like a keyboard without losing sync. So a Bank should be a family, not twenty strangers: for example four parents on buttons 1, 6, 11, 16, each followed by four evolutions of increasing distance. Keep BPM, swing and all Channel scalers identical across a Bank, since the manual warns that switching between different clock divisions needs a Reset.
 
@@ -246,6 +246,14 @@ Anchors are never touched unless the user unlocks them.
 **An amount control.** One value from 0 to 1 sets how many operators run and the highest tier they may reach: low touches only tiers 3 and 2, high reaches tier 1 on one or two roles. Per-Channel locks sit on top.
 
 **A distance check.** Because the engine renders any Save Slot, evolve can measure what it did: render parent and child for 4 bars with Chance forced to 100 and to 0, and count differing 16th cells per Channel (Hamming distance), weighted so kick and snare cost more than hats. Reject a child that is identical to its parent or over the budget for the chosen amount, and redraw. This catches the two real failures of parameter mutation on Euclidean patterns: changes that do nothing (rotating `(4,1)` by 4) and small parameter changes that sound like a different rhythm (Events 3 → 4 on length 8).
+
+**Built** (2026-10-03): `src/gen/evolve.ts`, `npm run evolve -- <bank folder> <from> <into>`, and an evolve button with an amount slider in the app. Differences from the plan above:
+
+- Distance is the Events only one Save Slot has over the Events either has, at Chance 100 over four bars, with kick and snare weighted 3. The budget is 0.08 + 0.5 × amount. Chance, Width and delay changes do not move it, so a candidate also counts as changed when those differ.
+- Evolve never changes BPM or swing, so a Bank stays on one clock.
+- There is no "logic flip" or "phase" operator; a nudge (Rotate ±1 or Events ±1) and a Layer reroll cover them.
+- A Role with anchors keeps its Recipe; only Roles without anchors are rerolled whole.
+- Without a Genotype, evolve only nudges Patterns and shifts Chance, and leaves Channels I and II and any AND Channel alone.
 
 Euclidean parameters make good mutation handles on their own terms: Events ±1 keeps the hits evenly spread, and Rotate keeps the shape and moves the accent. That is why a nudge sounds like a relative of the parent where flipping random steps does not.
 

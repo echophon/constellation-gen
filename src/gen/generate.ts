@@ -9,11 +9,11 @@ import {
 } from '../format/saveSlot';
 import { fitSteps, parseSteps, type FitPattern } from './fitter';
 import type { Genre, Layer, PatternSpec, Recipe, Tier, Value } from './genres';
-import { int, nextSeed, pick, pickWeighted, rng, type Rng } from './rng';
+import { int, pick, pickWeighted, rng, type Rng } from './rng';
 
 // Draws a Save Slot from a Genre. The same Genre and seed always give the
 // same Save Slot. The Genotype records which Recipe and Layer each Pattern
-// came from, so that a later change can redraw one part and keep the rest.
+// came from, so that evolve can redraw one part and keep the rest.
 
 /** The Layers kept for one Channel, in Pattern order. */
 export interface ChannelGenes {
@@ -24,7 +24,10 @@ export interface ChannelGenes {
 
 export interface Genotype {
   genre: string;
+  /** The seed of the draw this Save Slot descends from. */
   seed: number;
+  /** How many times it has been evolved since; 0 is the draw itself. */
+  generation: number;
   channels: ChannelGenes[];
 }
 
@@ -33,15 +36,13 @@ export interface Generated {
   genotype: Genotype;
 }
 
-export const SLOT_COUNT = 20;
-
-function draw(r: Rng, value: Value): number {
+export function draw(r: Rng, value: Value): number {
   if (typeof value === 'number') return value;
   if ('lo' in value) return int(r, value.lo, value.hi);
   return pick(r, value);
 }
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 function drawPattern(r: Rng, spec: PatternSpec): Pattern {
   const length = Math.max(1, draw(r, spec.length));
@@ -71,6 +72,8 @@ function fitGrid(grid: string, recipe: Recipe): FitPattern[] {
   if (!found) {
     const fit = fitSteps(parseSteps(grid), { logic });
     if (!fit) throw new Error(`recipe "${recipe.id}": "${grid}" does not fit in ${PATTERN_COUNT} Patterns under ${logic}`);
+    // Under AND the Patterns of a grid would have to coincide, not add up.
+    if (recipe.logic === 'AND' && fit.patterns.length > 1) throw new Error(`recipe "${recipe.id}": "${grid}" needs more than one Pattern, which AND cannot combine`);
     fits.set(key, (found = fit.patterns));
   }
   return found;
@@ -86,15 +89,23 @@ function drawLayer(r: Rng, layer: Layer, recipe: Recipe): Pattern[] {
   return out;
 }
 
-interface Drawn {
+/** The Patterns one Layer contributed to a Channel. */
+export interface Block {
   layer: number;
   tier: Tier;
   patterns: Pattern[];
 }
 
+/** Draws one Layer of a Recipe, whatever its odds. Null when it yields no Patterns. */
+export function drawBlock(r: Rng, recipe: Recipe, layer: number): Block | null {
+  const spec = recipe.layers[layer]!;
+  const patterns = drawLayer(r, spec, recipe);
+  return patterns.length ? { layer, tier: spec.tier, patterns } : null;
+}
+
 /** Drops ornaments first, last Layer first, until the Channel's Patterns fit. */
-function trim(drawn: Drawn[], recipe: Recipe): Drawn[] {
-  const kept = [...drawn];
+function trim(blocks: Block[], recipe: Recipe): Block[] {
+  const kept = [...blocks];
   const count = () => kept.reduce((n, d) => n + d.patterns.length, 0);
   while (count() > PATTERN_COUNT) {
     const tier = Math.max(...kept.map((d) => d.tier));
@@ -104,28 +115,53 @@ function trim(drawn: Drawn[], recipe: Recipe): Drawn[] {
   return kept;
 }
 
-function drawChannel(r: Rng, recipe: Recipe): { channel: Channel; genes: ChannelGenes } {
-  const drawn: Drawn[] = [];
-  recipe.layers.forEach((layer, index) => {
-    if (layer.odds !== undefined && r() >= layer.odds) return;
-    const patterns = drawLayer(r, layer, recipe);
-    if (patterns.length) drawn.push({ layer: index, tier: layer.tier, patterns });
-  });
-  const kept = trim(drawn, recipe);
-  const patterns = kept.flatMap((d) => d.patterns);
+export interface ChannelFeel {
+  width: number;
+  /** Channel rotate. */
+  delay: number;
+}
 
+export function drawFeel(r: Rng, recipe: Recipe): ChannelFeel {
+  return { width: clamp(draw(r, recipe.width ?? 50), 0, 100), delay: clamp(draw(r, recipe.delay ?? 0), 0, 100) };
+}
+
+/** A Channel playing the given Blocks of a Recipe, and the genes that say so. */
+export function buildChannel(recipe: Recipe, blocks: Block[], feel: ChannelFeel): { channel: Channel; genes: ChannelGenes } {
+  const kept = trim([...blocks].sort((a, b) => a.layer - b.layer), recipe);
+  const patterns = kept.flatMap((d) => d.patterns);
   const base = defaultChannel();
   const channel: Channel = {
     ...base,
     flop: recipe.flop ? 1 : 0,
     ratchet: recipe.clock?.[0] ?? 1,
     divide: recipe.clock?.[1] ?? 1,
-    width: clamp(draw(r, recipe.width ?? 50), 0, 100),
-    rotate: clamp(draw(r, recipe.delay ?? 0), 0, 100),
+    width: feel.width,
+    rotate: feel.delay,
     logic: recipe.logic ?? 'OR',
     patterns: base.patterns.map((p, i) => patterns[i] ?? { ...p, mute: 1 }),
   };
   return { channel, genes: { recipe: recipe.id, layers: kept.map((d) => ({ layer: d.layer, patterns: d.patterns.length })) } };
+}
+
+/** The Blocks a Channel was built from, read back from its Patterns. */
+export function blocksOf(channel: Channel, genes: ChannelGenes, recipe: Recipe): Block[] {
+  let at = 0;
+  return genes.layers.map(({ layer, patterns }) => {
+    const block = { layer, tier: recipe.layers[layer]!.tier, patterns: channel.patterns.slice(at, at + patterns) };
+    at += patterns;
+    return block;
+  });
+}
+
+/** A whole Channel drawn from a Recipe. */
+export function drawChannel(r: Rng, recipe: Recipe): { channel: Channel; genes: ChannelGenes } {
+  const blocks: Block[] = [];
+  recipe.layers.forEach((layer, index) => {
+    if (layer.odds !== undefined && r() >= layer.odds) return;
+    const block = drawBlock(r, recipe, index);
+    if (block) blocks.push(block);
+  });
+  return buildChannel(recipe, blocks, drawFeel(r, recipe));
 }
 
 /**
@@ -148,22 +184,5 @@ export function generateSlot(genre: Genre, seed: number, clock?: { bpm: number; 
     slot.channels[c] = channel;
     channels.push(genes);
   });
-  return { slot, genotype: { genre: genre.id, seed, channels } };
-}
-
-export interface GeneratedBank {
-  genre: string;
-  seed: number;
-  slots: Generated[];
-}
-
-/**
- * A Bank of Save Slots in the Genre. They share one BPM and swing, and so can
- * be swapped in Live Mode without a Reset.
- */
-export function generateBank(genre: Genre, seed: number): GeneratedBank {
-  const r = rng(seed);
-  const clock = { bpm: draw(r, genre.bpm), swing: draw(r, genre.swing) };
-  const slots = Array.from({ length: SLOT_COUNT }, () => generateSlot(genre, nextSeed(r), clock));
-  return { genre: genre.id, seed, slots };
+  return { slot, genotype: { genre: genre.id, seed, generation: 0, channels } };
 }

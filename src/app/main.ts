@@ -10,7 +10,11 @@ import {
   type Pattern,
   type SaveSlot,
 } from '../engine/index';
-import { generateBank } from '../gen/generate';
+import { generateBank } from '../gen/bank';
+import { evolve, evolveBare } from '../gen/evolve';
+import type { Genotype } from '../gen/generate';
+import { SIDECAR_NAME, channelHash, serializeSidecar } from '../gen/sidecar';
+import { zip } from '../format/zip';
 import { GENRES, genreById } from '../gen/genres';
 import { nextWindow, type Queued } from './lookahead';
 import { moveCursor, parseKey, type Action, type Cursor } from './keys';
@@ -30,6 +34,11 @@ let channel = 0;
 let genreId = GENRES[0]!.id;
 /** The genre and seed the Bank was generated from, if it was. */
 let generatedFrom = '';
+let origin: { genre: string; seed: number } | null = null;
+/** Genotypes of generated Save Slots, by the hash of their Channels, so that one survives undo and is dropped by an edit. */
+const genotypes = new Map<string, Genotype>();
+/** How far evolve may go, 0 to 1. */
+let evolveAmount = 0.3;
 let timeline = new Timeline(bank[0]!);
 let playing = false;
 let stoppedAt = 0;
@@ -270,14 +279,17 @@ function buildHeader() {
   };
   const generate = el('button', { textContent: 'generate', title: generatedFrom || 'Replace the Bank with 20 Save Slots in this genre' });
   generate.onclick = generateIntoBank;
+  const amount = el('input', { type: 'range', min: '0', max: '1', step: '0.05', title: 'How far evolve may go' });
+  amount.value = String(evolveAmount);
+  amount.style.width = '60px';
+  amount.oninput = () => (evolveAmount = amount.valueAsNumber);
+  amount.onchange = () => amount.blur();
+  const evolveBtn = el('button', { textContent: 'evolve', title: 'Vary this Save Slot, keeping what defines it' });
+  evolveBtn.onclick = evolveSlot;
   const undoBtn = el('button', { textContent: 'undo', title: 'U, or Cmd/Ctrl+Z' });
   undoBtn.onclick = undoLast;
-  const save = el('button', { textContent: 'download', title: 'Download this Save Slot as NN.TXT' });
-  save.onclick = () => {
-    const a = el('a', { href: URL.createObjectURL(new Blob([serializeSaveSlot(slot())], { type: 'text/plain' })), download: `${slotName(slotIndex)}.TXT` });
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
+  const save = el('button', { textContent: 'download', title: 'Download the Bank as a zip: unzip it and copy the folder to the card under a Bank number' });
+  save.onclick = downloadBank;
   header.replaceChildren(
     play,
     clockCell('bpm', 'bpm', 1, 300),
@@ -287,6 +299,8 @@ function buildHeader() {
     el('span', { className: 'spacer' }),
     genres,
     generate,
+    evolveBtn,
+    amount,
     undoBtn,
     save,
   );
@@ -412,11 +426,50 @@ function generateIntoBank() {
   if (!genre || !confirm(`Replace all ${bank.length} Save Slots with ${genre.name}?`)) return;
   const seed = Math.floor(Math.random() * 0x100000000);
   const generated = generateBank(genre, seed);
-  bank.forEach((_, i) => (bank[i] = generated.slots[i]!.slot));
+  generated.slots.forEach(({ slot, genotype }, i) => {
+    bank[i] = slot;
+    genotypes.set(channelHash(slot), genotype);
+  });
+  origin = { genre: genre.id, seed };
   generatedFrom = `${genre.name}, seed ${seed}: npm run generate -- ${genre.id} --seed ${seed}`;
   undo.length = 0;
   redo.length = 0;
   loadSlot(slotIndex);
+}
+
+/** Downloads every Save Slot of the Bank, and its sidecar if it was generated, as one zip. */
+function downloadBank() {
+  const entries = bank.map((s, i) => ({ name: `${slotName(i)}.TXT`, text: serializeSaveSlot(s) }));
+  if (origin) {
+    // A Save Slot edited since it was generated or evolved has no Genotype any more.
+    const slots = bank.map((s) => {
+      const hash = channelHash(s);
+      const genotype = genotypes.get(hash);
+      return genotype ? { genotype, hash } : null;
+    });
+    entries.push({ name: SIDECAR_NAME, text: serializeSidecar({ version: 1, ...origin, slots }) });
+  }
+  const url = URL.createObjectURL(new Blob([zip(entries) as BlobPart], { type: 'application/zip' }));
+  el('a', { href: url, download: origin ? `bank-${origin.genre}.zip` : 'bank.zip' }).click();
+  URL.revokeObjectURL(url);
+}
+
+/** Replaces the Save Slot under edit with a variation of it; one undo step. */
+function evolveSlot() {
+  const options = { seed: Math.floor(Math.random() * 0x100000000), amount: evolveAmount };
+  const genotype = genotypes.get(channelHash(slot()));
+  const genre = genotype && genreById(genotype.genre);
+  checkpoint();
+  edit(() => {
+    if (genotype && genre) {
+      const child = evolve(genre, { slot: slot(), genotype }, options);
+      genotypes.set(channelHash(child.slot), child.genotype);
+      bank[slotIndex] = child.slot;
+    } else {
+      bank[slotIndex] = evolveBare(slot(), options).slot;
+    }
+  });
+  build();
 }
 
 function select(c: number) {

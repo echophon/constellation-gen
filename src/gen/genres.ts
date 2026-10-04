@@ -131,6 +131,67 @@ const ROLL: Recipe = {
   ],
 };
 
+// ---------- AND recipes ----------
+// Under AND a Channel is high only while every Pattern is high, so a second
+// Pattern can say when the first one is allowed to sound. A mask is high for
+// Width percent of its own step, and the Width is the Channel's: 90 reaches the
+// last 16th of a mask up to 8 pulses long, 95 of one up to 16.
+
+/** A rhythm that sounds only while a mask Pattern is high. The rhythm is the motif, the mask an ornament. */
+const masked = (id: string, width: number, source: PatternSpec, mask: PatternSpec, more: Partial<Recipe> = {}): Recipe => ({
+  id,
+  logic: 'AND',
+  width,
+  layers: [pat(1, source), pat(2, mask)],
+  ...more,
+});
+
+const EIGHTHS: PatternSpec = { length: 2 };
+const OFFBEATS: PatternSpec = { length: 4, rotate: 2 };
+const SIXTEENTHS: PatternSpec = { length: 1 };
+const EUCLID: PatternSpec = { length: [8, 16], events: [3, 5], rotate: 'any' };
+
+/** Plays for three bars and rests for the fourth. */
+const restBar4 = (id: string, source: PatternSpec): Recipe => masked(id, 95, source, { length: 4, events: 3, divide: 16 });
+/** Each bar either plays or stays silent: Chance on the mask decides once per bar, not once per Event. */
+const byBar = (id: string, source: PatternSpec): Recipe => masked(id, 95, source, { length: 1, divide: 16, chance: range(45, 75) });
+/** The same, decided beat by beat. */
+const byBeat = (id: string, source: PatternSpec): Recipe => masked(id, 90, source, { length: 1, divide: 4, chance: range(50, 80) });
+/** Only the half-bar or the beat of the rhythm that a Burst window lets through. */
+const windowed = (id: string, source: PatternSpec): Recipe[] => [
+  masked(`${id}-half-bar`, 50, source, { length: 16, rotate: [0, 8], burst: 8 }),
+  masked(`${id}-one-beat`, 50, source, { length: 16, rotate: [4, 8, 12], burst: 4 }),
+];
+
+const HATS_REST_BAR_4 = restBar4('8ths-rest-bar-4', EIGHTHS);
+const OPEN_REST_BAR_4 = restBar4('offbeat-rest-bar-4', OFFBEATS);
+const HATS_BY_BEAT = byBeat('16ths-by-beat', SIXTEENTHS);
+const PERC_BY_BAR = byBar('euclid-by-bar', EUCLID);
+const PERC_WINDOWED = windowed('euclid', EUCLID);
+
+/** Two short loops that only sound where they coincide: one Event every 12 to 56 steps. */
+const COINCIDENCE: Recipe = {
+  id: 'coincidence',
+  logic: 'AND',
+  layers: [pat(1, { length: [3, 5, 7] }), pat(1, { length: [4, 8] })],
+};
+/** The same with Euclidean loops of different lengths: a sparse line with a long cycle. */
+const POLY_ACCENTS: Recipe = {
+  id: 'polymeter-accents',
+  logic: 'AND',
+  layers: [pat(1, { length: [5, 7], events: [2, 3], rotate: 'any' }), pat(1, { length: [8, 16], events: [3, 5, 7], rotate: 'any' })],
+};
+/** A Ratchet roll in the last beat of every 2 or 4 bars. */
+// Width 95, not 90: the last of three Ratchet hits starts 92% of the way through the mask.
+const ROLL_FILL: Recipe = {
+  id: 'roll-fill',
+  logic: 'AND',
+  width: 95,
+  layers: [pat(2, { length: 1, ratchet: [2, 3] }), pat(2, { length: [8, 16], rotate: 'last', divide: 4 })],
+};
+/** A slow gate chopped into 16ths: a short stutter once every 1 or 2 bars. */
+const STUTTER: Recipe = masked('stutter', 50, SIXTEENTHS, { length: [2, 4], rotate: 'any', divide: [4, 8] });
+
 // ---------- genres ----------
 
 const HOUSE: Genre = {
@@ -142,10 +203,10 @@ const HOUSE: Genre = {
     role('kick', FOUR_FLOOR),
     role('clap', BACKBEAT),
     role('closed hat', { ...HATS_16, weight: 2 }, HATS_8, { id: 'shuffle', layers: [grid(1, ['x.xx', '.xxx'])] }),
-    role('open hat', OPEN_OFF),
-    role('perc', PERC_EUCLID),
+    role('open hat', { ...OPEN_OFF, weight: 2 }, OPEN_REST_BAR_4),
+    role('perc', { ...PERC_EUCLID, weight: 2 }, PERC_BY_BAR, ...PERC_WINDOWED),
     role('shaker', GHOSTS, rest(1)),
-    role('fill', FILL_4, FILL_2, rest(2)),
+    role('fill', FILL_4, FILL_2, ROLL_FILL, rest(2)),
     role('bass', BASS_OFFBEAT, BASS_EUCLID),
   ],
 };
@@ -158,7 +219,7 @@ const TECHNO: Genre = {
   roles: [
     role('kick', { ...FOUR_FLOOR, weight: 3 }, { id: 'four-floor-push', layers: [grid(0, 'x...x...x...x.x.')] }),
     role('clap', { id: 'sparse', layers: [grid(0, ['....x.......x...', '............x...'])] }, rest(1)),
-    role('closed hat', HATS_OFF, HATS_16),
+    role('closed hat', HATS_OFF, HATS_16, HATS_BY_BEAT),
     role(
       'rumble',
       // 16ths with the kick's steps removed.
@@ -171,7 +232,8 @@ const TECHNO: Genre = {
         pat(1, { length: [3, 5, 6, 7, 12], events: range(1, 3), rotate: 'any' }),
         pat(1, { length: [5, 7, 9, 11], events: range(1, 2), rotate: 'any' }, 0.6),
       ],
-    }),
+      weight: 2,
+    }, PERC_BY_BAR, STUTTER),
     role('perc 2', {
       id: 'xor-polymeter',
       logic: 'XOR',
@@ -179,8 +241,8 @@ const TECHNO: Genre = {
         pat(1, { length: 16, events: [5, 7], rotate: 'any' }),
         pat(1, { length: [7, 12], events: range(2, 3), rotate: 'any' }),
       ],
-    }),
-    role('fill', FILL_4, FILL_BROKEN, rest(2)),
+    }, POLY_ACCENTS),
+    role('fill', FILL_4, FILL_BROKEN, ROLL_FILL, rest(2)),
     role('bass', BASS_EUCLID),
   ],
 };
@@ -196,13 +258,14 @@ const DNB: Genre = {
     role('kick', { id: 'two-step', layers: [grid(0, TWO_STEP_KICK), hit(2, [7, 11, 13], range(20, 50), 0.6)] }),
     role('snare', BACKBEAT),
     role('closed hat', HATS_8, HATS_16),
-    role('open hat', { id: 'offbeat', layers: [grid(1, ['..x.', '......x.'])] }, rest(1)),
+    role('open hat', { id: 'offbeat', layers: [grid(1, ['..x.', '......x.'])] }, OPEN_REST_BAR_4, rest(1)),
     role('rim', {
       id: 'chance-hits',
       layers: [hit(2, [7, 9, 15], range(40, 80)), hit(2, [3, 6, 14], range(40, 80), 0.5)],
-    }),
+      weight: 2,
+    }, COINCIDENCE),
     role('ghost snare', { id: 'amen-ghosts', layers: [grid(1, '.......x.x.....x', { chance: range(50, 90) })] }, rest(1)),
-    role('fill', FILL_4, FILL_BROKEN, rest(1)),
+    role('fill', FILL_4, FILL_BROKEN, ROLL_FILL, rest(1)),
     role('bass', BASS_EUCLID),
   ],
 };
@@ -226,10 +289,10 @@ const JUNGLE: Genre = {
     ),
     role('snare', { id: 'amen-4-bars', layers: [grid(0, AMEN_SNARE)] }),
     role('ride', HATS_8),
-    role('crash', { id: 'amen-crash', layers: [grid(1, AMEN_CRASH)] }, rest(1)),
+    role('crash', { id: 'amen-crash', layers: [grid(1, AMEN_CRASH)] }, COINCIDENCE, rest(1)),
     role('rim', { id: 'chance-hits', layers: [hit(2, [3, 6, 11, 14], range(30, 60)), hit(2, [1, 13], range(30, 60), 0.5)] }),
     role('ghost snare', { id: 'amen-ghosts', layers: [grid(1, AMEN_GHOST)] }),
-    role('fill', FILL_BROKEN, FILL_4, rest(1)),
+    role('fill', FILL_BROKEN, FILL_4, ROLL_FILL, rest(1)),
     role('bass', BASS_EUCLID),
   ],
 };
@@ -271,13 +334,13 @@ const IDM: Genre = {
         pat(1, { length: 16, events: [5, 7, 9], rotate: 'any' }),
         pat(1, { length: [7, 9, 11, 13], events: range(2, 5), rotate: 'any' }),
       ],
-    }),
+    }, POLY_ACCENTS),
     role('glitch', {
       id: 'ratchets',
       layers: [
         pat(1, { length: [7, 9, 11, 13], events: range(1, 2), rotate: 'any', ratchet: [3, 4, 6, 8], chance: range(40, 80) }),
       ],
-    }),
+    }, STUTTER, HATS_BY_BEAT),
     role('gates', {
       id: 'flop',
       flop: true,
@@ -308,9 +371,9 @@ const DRILL: Genre = {
     role('snare', { id: 'counter-snare', layers: [grid(0, bars('........x.......', '............x...'))] }),
     role('closed hat', hatsWithRolls('tresillo', 'x..x..x.')),
     role('open hat', { id: 'sparse', layers: [hit(1, [2, 10, 14])] }, rest(1)),
-    role('perc', { id: 'counter', layers: [pat(1, { length: 32, rotate: [14, 20, 30], chance: range(60, 100) })] }),
+    role('perc', { id: 'counter', layers: [pat(1, { length: 32, rotate: [14, 20, 30], chance: range(60, 100) })] }, COINCIDENCE),
     role('ghost', GHOSTS, rest(2)),
-    role('fill', FILL_4, rest(2)),
+    role('fill', FILL_4, ROLL_FILL, rest(2)),
     role('808', bassGate('follows-kick', hit(1, 0), hit(1, [6, 7, 10]))),
   ],
 };
@@ -325,9 +388,9 @@ const TRAP: Genre = {
     role('snare', { id: 'half-time', layers: [grid(0, '........x.......'), pat(2, { length: 32, rotate: [30, 31], chance: range(40, 80) }, 0.5)] }),
     role('closed hat', hatsWithRolls('8ths', 'x.'), hatsWithRolls('16ths', 'x')),
     role('open hat', { id: 'sparse', layers: [hit(1, [6, 10, 14])] }, rest(1)),
-    role('perc', PERC_EUCLID, rest(1)),
+    role('perc', PERC_EUCLID, PERC_BY_BAR, rest(1)),
     role('ghost', GHOSTS, rest(2)),
-    role('fill', FILL_4, rest(1)),
+    role('fill', FILL_4, ROLL_FILL, rest(1)),
     role('808', bassGate('follows-kick', hit(1, 0), hit(1, [3, 6, 7, 10]))),
   ],
 };
@@ -349,10 +412,10 @@ const BOOM_BAP: Genre = {
     role('snare', BACKBEAT, { id: 'late-backbeat', delay: range(5, 15), layers: [grid(0, '....x...')] }),
     role('closed hat', { ...HATS_8, weight: 2 }, { id: '8ths-and-swung', layers: [grid(1, 'x.'), pat(2, { length: 2, rotate: 1, chance: range(20, 50) })] }),
     role('open hat', { id: 'sparse', layers: [hit(1, [6, 10, 14], range(60, 100))] }, rest(1)),
-    role('rim', { id: 'euclid', layers: [pat(1, { length: 16, events: [2, 3], rotate: 'any', chance: range(60, 100) })] }, rest(1)),
+    role('rim', { id: 'euclid', layers: [pat(1, { length: 16, events: [2, 3], rotate: 'any', chance: range(60, 100) })] }, PERC_BY_BAR, rest(1)),
     // The 16th before beats 2 and 4, where swing is heard most.
     role('ghost snare', { id: 'before-backbeat', layers: [pat(1, { length: 8, rotate: 3, chance: range(40, 70) }), hit(2, [9, 15], range(20, 50), 0.5)] }),
-    role('shaker', rest(2), { id: '16ths', layers: [pat(1, { length: 1, chance: range(70, 100) })] }),
+    role('shaker', rest(2), { id: '16ths', layers: [pat(1, { length: 1, chance: range(70, 100) })] }, HATS_REST_BAR_4),
     role('bass', BASS_EUCLID),
   ],
 };
@@ -371,8 +434,8 @@ const GARAGE: Genre = {
     ),
     role('snare', BACKBEAT),
     role('closed hat', HATS_OFF),
-    role('shaker', { id: '16ths', layers: [pat(1, { length: 1, chance: range(70, 100) })] }),
-    role('perc', PERC_EUCLID),
+    role('shaker', { id: '16ths', layers: [pat(1, { length: 1, chance: range(70, 100) })], weight: 2 }, HATS_BY_BEAT),
+    role('perc', { ...PERC_EUCLID, weight: 2 }, ...PERC_WINDOWED),
     role('ghost snare', { id: 'chance-hits', layers: [hit(2, [7, 9, 15], range(40, 70)), hit(2, [1, 3, 11], range(30, 60), 0.5)] }),
     role('fill', FILL_2, FILL_4, rest(2)),
     role('bass', BASS_EUCLID, BASS_OFFBEAT),
@@ -397,10 +460,10 @@ const JUKE: Genre = {
     ),
     role('clap', { id: 'half-time', layers: [grid(0, '............x...')] }, { id: 'full-time', layers: [grid(0, '....x...')] }),
     role('closed hat', HATS_OFF, HATS_16),
-    role('open hat', OPEN_OFF, rest(1)),
+    role('open hat', OPEN_OFF, OPEN_REST_BAR_4, rest(1)),
     role('toms', { id: 'triplets', clock: [3, 2], layers: [pat(1, { length: [6, 12], events: range(2, 5), rotate: 'any', chance: range(50, 80) })] }),
     role('toms 2', { id: 'slow-triplets', clock: [3, 4], layers: [pat(1, { length: 12, events: [5, 7], rotate: 'any', chance: range(50, 80) })] }, rest(1)),
-    role('snare roll', { id: 'roll', layers: [pat(2, { length: 16, rotate: [6, 14], burst: 2, ratchet: 2, chance: range(40, 70) })] }, rest(1)),
+    role('snare roll', { id: 'roll', layers: [pat(2, { length: 16, rotate: [6, 14], burst: 2, ratchet: 2, chance: range(40, 70) })] }, ROLL_FILL, STUTTER, rest(1)),
     role('sub', BASS_EUCLID),
   ],
 };
@@ -416,9 +479,9 @@ const JERSEY: Genre = {
     role('clap', BACKBEAT),
     role('closed hat', HATS_8, HATS_16),
     role('open hat', OPEN_OFF),
-    role('perc', PERC_EUCLID),
+    role('perc', { ...PERC_EUCLID, weight: 2 }, ...PERC_WINDOWED),
     role('ghost', GHOSTS, rest(1)),
-    role('roll', ROLL, FILL_2, rest(1)),
+    role('roll', ROLL, FILL_2, ROLL_FILL, rest(1)),
     role('bass', BASS_EUCLID),
   ],
 };
@@ -434,9 +497,9 @@ const DEMBOW: Genre = {
     role('snare', { id: 'dembow', layers: [grid(0, '...x..x.'), hit(2, [15, 13], range(20, 40), 0.4)] }),
     role('closed hat', HATS_8, HATS_16),
     role('open hat', OPEN_OFF, rest(1)),
-    role('timbal', { id: 'cinquillo', layers: [pat(1, { length: 8, events: 5, rotate: 'any' })] }, PERC_EUCLID),
+    role('timbal', { id: 'cinquillo', layers: [pat(1, { length: 8, events: 5, rotate: 'any' })] }, PERC_EUCLID, ...PERC_WINDOWED),
     role('ghost', GHOSTS, rest(1)),
-    role('fill', FILL_4, rest(1)),
+    role('fill', FILL_4, ROLL_FILL, rest(1)),
     role('bass', bassGate('tresillo-gate', grid(1, ['x..x..x.', '...x..x.']))),
   ],
 };
@@ -453,10 +516,10 @@ const AFRO_CUBAN: Genre = {
     // Son 3-2, son 2-3, rumba 3-2: each is E(5,16) with one Event moved.
     role('clave', { id: 'clave', logic: 'XOR', layers: [grid(0, SON_CLAVES)] }),
     role('cascara', { id: 'cinquillo', layers: [pat(0, { length: 8, events: 5, rotate: [0, 3, 5] })] }),
-    role('cowbell', { id: 'pulse', layers: [grid(1, ['x...', 'x.x.'])] }),
+    role('cowbell', { id: 'pulse', layers: [grid(1, ['x...', 'x.x.'])], weight: 2 }, restBar4('pulse-rest-bar-4', EIGHTHS)),
     role('conga', { id: 'dense-euclid', layers: [pat(1, { length: 16, events: [7, 9], rotate: 'any' })] }),
     role('guiro', { id: 'cumbia', layers: [pat(1, { length: 4, events: 3, rotate: 2 })] }, rest(1)),
-    role('timbale', FILL_4, FILL_BROKEN, rest(1)),
+    role('timbale', FILL_4, FILL_BROKEN, ROLL_FILL, rest(1)),
     role('bass', bassGate('tumbao-gate', grid(1, ['...x..x.', 'x..x..x.']))),
   ],
 };
@@ -473,8 +536,8 @@ const BRAZIL: Genre = {
     role('shaker', HATS_16),
     role('tamborim', { id: 'samba', layers: [pat(1, { length: 16, events: 7, rotate: [2, 0] })] }),
     role('agogo', { id: 'cowbell', layers: [pat(1, { length: 16, events: 9, rotate: 'any' })] }, rest(1)),
-    role('perc', PERC_EUCLID, rest(1)),
-    role('fill', FILL_4, rest(2)),
+    role('perc', PERC_EUCLID, PERC_BY_BAR, ...PERC_WINDOWED, rest(1)),
+    role('fill', FILL_4, ROLL_FILL, rest(2)),
     role('bass', BASS_EUCLID),
   ],
 };
@@ -493,7 +556,12 @@ const BELL: Genre = {
     role('bell', twelve('standard-bell', pat(0, { length: 12, events: 7, rotate: [0, 9] }))),
     role('shaker', twelve('tumbao', pat(1, { length: 3, events: 2, rotate: [0, 1, 2] }))),
     role('clap', twelve('venda', pat(1, { length: 12, events: 5, rotate: 'any' })), twelve('fandango', grid(1, 'x..'))),
-    role('drum', twelve('euclid', pat(1, { length: 12, events: [4, 5], rotate: 'any' }))),
+    role(
+      'drum',
+      { ...twelve('euclid', pat(1, { length: 12, events: [4, 5], rotate: 'any' })), weight: 2 },
+      // One mask step is a bar of twelve.
+      { ...masked('euclid-by-bar', 95, { length: 12, events: [4, 5], rotate: 'any' }, { length: 1, divide: 12, chance: range(45, 75) }), clock: [3, 4] },
+    ),
     // Three evenly spaced Events against the four beats.
     role('cross rhythm', twelve('three-over-four', pat(1, { length: 4, rotate: 'any' })), rest(1)),
     role('ghost', twelve('ghosts', pat(2, { length: 12, events: range(2, 4), rotate: 'any', chance: range(40, 70) })), rest(1)),
@@ -512,7 +580,12 @@ const oddMeter = (id: string, name: string, steps: number, bpm: Range, bell: num
     role('snare', { id: 'metric', layers: [pat(0, { length: steps, events: bell, rotate: 0 })] }),
     role('closed hat', HATS_16, HATS_8),
     role('open hat', { id: 'two-bar', layers: [pat(1, { length: steps * 2, events: [1, 2, 3], rotate: 'any' })] }, rest(1)),
-    role('perc', { id: 'euclid', layers: [pat(1, { length: steps, events: range(2, steps - 2), rotate: 'any' })] }),
+    role(
+      'perc',
+      { id: 'euclid', weight: 2, layers: [pat(1, { length: steps, events: range(2, steps - 2), rotate: 'any' })] },
+      // One mask step is a bar.
+      masked('euclid-by-bar', 95, { length: steps, events: range(2, steps - 2), rotate: 'any' }, { length: 1, divide: steps, chance: range(45, 75) }),
+    ),
     role('ghost', { id: 'ghosts', layers: [pat(2, { length: steps * 2, events: range(2, 4), rotate: 'any', chance: range(40, 70) })] }, rest(1)),
     role('four against', { id: 'straight-four', layers: [pat(1, { length: 4, rotate: 'any' })] }, rest(2)),
     role('bass', bassGate('gate', pat(1, { length: steps, events: [2, 3], rotate: 'any' }))),

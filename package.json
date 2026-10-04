@@ -8,6 +8,7 @@
     "render": "tsx scripts/render.ts",
     "fit": "tsx scripts/fit.ts",
     "generate": "tsx scripts/generate.ts",
+    "evolve": "tsx scripts/evolve.ts",
     "proto:visual": "vite prototype/visual-language --open",
     "dev": "vite",
     "build": "tsc --noEmit && vite build"

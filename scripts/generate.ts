@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { serializeSaveSlot } from '../src/engine/index';
-import { generateBank } from '../src/gen/generate';
+import { generateBank } from '../src/gen/bank';
 import { GENRES, genreById } from '../src/gen/genres';
 import { SIDECAR_NAME, serializeSidecar, sidecarFor } from '../src/gen/sidecar';
 

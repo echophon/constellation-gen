@@ -101,6 +101,10 @@ One or more Patterns of a Recipe that are drawn, kept and rerolled together. Its
 **Fit**:
 The fewest Patterns, and the Logic, that put an Event on exactly the steps of a given grid.
 
+**Evolve**:
+To make a variation of a Save Slot by redrawing or nudging some of its Layers while keeping the rest, within a set distance of the original.
+_Avoid_: Mutate, randomise (random means a fresh draw with nothing kept)
+
 **Genotype**:
 The record of how a Save Slot was generated: its Genre, its seed, and which Recipe and Layer each Pattern came from.
 

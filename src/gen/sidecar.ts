@@ -1,5 +1,6 @@
 import { serializeSaveSlot, type SaveSlot } from '../format/saveSlot';
-import type { GeneratedBank, Genotype } from './generate';
+import type { GeneratedBank } from './bank';
+import type { Genotype } from './generate';
 
 // The sidecar is one file in a Bank's folder, beside its Save Slots. It keeps
 // each generated Save Slot's Genotype, which the Save Slot format has no room
