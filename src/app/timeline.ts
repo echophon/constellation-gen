@@ -1,4 +1,4 @@
-import { ChannelRenderer, type Interval, type SaveSlot } from '../engine/index';
+import { ChannelRenderer, type Edge, type Interval, type SaveSlot } from '../engine/index';
 
 /** Playback loops here, in Main Clock pulses. */
 export const HORIZON = 1024;
@@ -11,12 +11,14 @@ export const SEED = 1;
  */
 export class Timeline {
   readonly out: Interval[][];
+  private readonly edgeList: Edge[][];
   private readonly open: (number | null)[];
   private readonly renderers: ChannelRenderer[];
   private renderedTo = 0;
 
   constructor(readonly slot: SaveSlot) {
     this.out = slot.channels.map(() => []);
+    this.edgeList = slot.channels.map(() => []);
     this.open = slot.channels.map(() => null);
     this.renderers = slot.channels.map((_, c) => new ChannelRenderer(c, { seed: SEED }));
   }
@@ -27,6 +29,7 @@ export class Timeline {
       const next = Math.min(target, this.renderedTo + CHUNK);
       this.renderers.forEach((r, c) => {
         for (const e of r.advance(this.slot, next)) {
+          this.edgeList[c]!.push(e);
           const start = this.open[c];
           if (e.high && start == null) this.open[c] = e.t;
           else if (!e.high && start != null) {
@@ -48,10 +51,19 @@ export class Timeline {
     return found;
   }
 
-  /** Times in [a, b) at which a Channel's Output Signal rises. */
-  rises(c: number, a: number, b: number): number[] {
-    return this.intervals(c, a, b)
-      .map((iv) => iv.start)
-      .filter((t) => t >= a && t < b);
+  /** Rising and falling edges of a Channel's Output Signal in [a, b). */
+  edges(c: number, a: number, b: number): Edge[] {
+    this.ensure(b);
+    return this.edgeList[c]!.filter((e) => e.t >= a && e.t < b);
+  }
+
+  /** Whether a Channel's Output Signal is high just before t. */
+  levelBefore(c: number, t: number): boolean {
+    this.ensure(t);
+    const list = this.edgeList[c]!;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i]!.t < t) return list[i]!.high;
+    }
+    return false;
   }
 }

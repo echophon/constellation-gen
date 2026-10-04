@@ -14,7 +14,7 @@ import { SEED, type Timeline } from './timeline';
 
 export const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 export const SPAN = 64; // pulses per page
-export const GUTTER = 462; // left of the time axis: controls and dials
+export const GUTTER = 120; // left of the time axis: lane labels and dials
 const LANE = 58;
 const MUTED_LANE = 22;
 const OVERVIEW = 22;
@@ -43,8 +43,6 @@ export interface Geometry {
   height: number;
   right: number;
   page: number;
-  /** Where the Channel settings strip sits, for the DOM controls. */
-  stripY: number;
   rows: Row[];
 }
 
@@ -55,9 +53,7 @@ export function layout(slot: SaveSlot, channel: number, width: number, pos: numb
     rows.push({ kind: 'overview', index: c, y, h: OVERVIEW });
     y += OVERVIEW;
   }
-  y += 12;
-  const stripY = y;
-  y += 52;
+  y += 14;
   slot.channels[channel]!.patterns.forEach((pat, p) => {
     const h = pat.mute ? MUTED_LANE : LANE;
     rows.push({ kind: pat.mute ? 'muted' : 'pattern', index: p, y, h });
@@ -68,7 +64,7 @@ export function layout(slot: SaveSlot, channel: number, width: number, pos: numb
   y += 36;
   rows.push({ kind: 'out', index: 0, y, h: 30 });
   y += 44;
-  return { width, height: y, right: width - 16, page: Math.floor(pos / SPAN) * SPAN, stripY, rows };
+  return { width, height: y, right: width - 16, page: Math.floor(pos / SPAN) * SPAN, rows };
 }
 
 export const xOf = (geo: Geometry, t: number) => GUTTER + ((t - geo.page) / SPAN) * (geo.right - GUTTER);
@@ -100,6 +96,8 @@ export interface View {
   timeline: Timeline;
   channel: number;
   pos: number;
+  /** Where the keyboard cursor is: on the Channel list, or on a row of fields (0 is the Channel strip, 1-8 are Patterns). */
+  focus: { level: 'channel' | 'pattern'; row: number };
 }
 
 export function draw(g: CanvasRenderingContext2D, geo: Geometry, view: View): void {
@@ -151,6 +149,13 @@ export function draw(g: CanvasRenderingContext2D, geo: Geometry, view: View): vo
       if (c === channel) {
         g.fillStyle = '#ffffff12';
         g.fillRect(0, y, geo.width, h);
+        if (view.focus.level === 'channel') {
+          g.fillStyle = ink.length(c);
+          g.fillRect(0, y, 3, h);
+          g.strokeStyle = ink.length(c, 0.5);
+          g.lineWidth = 1;
+          g.strokeRect(0.5, y + 0.5, geo.width - 1, h - 1);
+        }
       }
       label(`${ROMAN[c]}${muted ? '  muted' : ''}`, GUTTER - 12, y + h * 0.7, muted ? '#4a556b' : ink.event(c), 'right');
       lane(timeline.intervals(c, page, page + SPAN), y + 4, h - 8, ink.event(c));
@@ -181,6 +186,13 @@ export function draw(g: CanvasRenderingContext2D, geo: Geometry, view: View): vo
     }
 
     const pat = ch.patterns[row.index]!;
+    if (view.focus.level === 'pattern' && view.focus.row === row.index + 1) {
+      g.fillStyle = '#ffffff0d';
+      g.fillRect(0, y, geo.width, h);
+      g.fillStyle = ink.length(channel);
+      g.fillRect(0, y, 3, h);
+    }
+    label(`P${row.index + 1}`, 12, y + h / 2 + 4, pat.mute ? '#4a556b' : ink.event(channel));
     if (row.kind === 'muted') {
       g.fillStyle = '#2a3140';
       for (const e of patternEvents(slot, channel, row.index, page, page + SPAN, { seed: SEED })) {

@@ -10,19 +10,29 @@
     <header id="header"></header>
     <main id="stage">
       <canvas id="scope"></canvas>
-      <div id="controls"></div>
     </main>
+    <section id="panels">
+      <div id="editor">
+        <div id="controls"></div>
+      </div>
+      <details id="voices" open>
+        <summary>Voices</summary>
+        <p>Each voice follows its Channel's gate. Sustain is the level held while the gate is open, so Width and Flop are heard as note length; set it to 0 for a plain hit.</p>
+        <div id="voice-editor"></div>
+      </details>
+    </section>
     <footer id="legend">
       <div id="status"></div>
       <table>
-        <tr><th colspan="2">Drag on a Pattern lane</th><th colspan="2">Fields</th><th colspan="2">Keys</th></tr>
-        <tr><td><kbd>drag</kbd> ← →</td><td>Rotate</td><td>type or scroll</td><td>change a value</td><td><kbd>space</kbd></td><td>play / stop (stop resets)</td></tr>
-        <tr><td><kbd>drag</kbd> ↑ ↓</td><td>Events</td><td>click a label</td><td>randomise that value</td><td><kbd>1</kbd>–<kbd>8</kbd></td><td>select Channel</td></tr>
-        <tr><td><kbd>shift</kbd> + drag ← →</td><td>Burst</td><td><kbd>P1</kbd>–<kbd>P8</kbd></td><td>mute / unmute Pattern</td><td><kbd>cmd/ctrl</kbd> + <kbd>Z</kbd></td><td>undo</td></tr>
-        <tr><td><kbd>shift</kbd> + drag ↑ ↓</td><td>Ratchet</td><td>overview row</td><td>click to select Channel</td><td></td><td></td></tr>
-        <tr><td><kbd>alt</kbd> + drag</td><td>Chance</td><td>Save Slot 00–19</td><td>switch in sync</td><td></td><td></td></tr>
-        <tr><td>drag a loop bracket</td><td>Length</td><td></td><td></td><td></td><td></td></tr>
-        <tr><td>drag in the step strip</td><td>Divide</td><td></td><td></td><td></td><td></td></tr>
+        <tr><th colspan="2">Move</th><th colspan="2">Change</th><th colspan="2">Patterns and Channels</th><th colspan="2">Mouse</th></tr>
+        <tr><td><kbd>h</kbd> <kbd>l</kbd></td><td>left / right: mute, then the fields</td><td><kbd>i</kbd> <kbd>u</kbd></td><td>value up / down; toggle on / off; next / previous Logic</td><td><kbd>m</kbd> or <kbd>x</kbd></td><td>mute / unmute</td><td>drag ← →</td><td>Rotate</td></tr>
+        <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>row down / up</td><td><kbd>5</kbd><kbd>i</kbd></td><td>a count works on any key</td><td><kbd>yy</kbd> <kbd>p</kbd></td><td>copy / paste Pattern</td><td>drag ↑ ↓</td><td>Events</td></tr>
+        <tr><td><kbd>h</kbd> past the first stop</td><td>out to the Channel list</td><td><kbd>.</kbd></td><td>repeat the last change</td><td><kbd>Y</kbd> <kbd>P</kbd></td><td>copy / paste Channel</td><td><kbd>shift</kbd> + drag ← →</td><td>Burst</td></tr>
+        <tr><td><kbd>j</kbd> <kbd>k</kbd> on the Channel list</td><td>next / previous Channel</td><td><kbd>enter</kbd> or <kbd>c</kbd></td><td>type a value, <kbd>esc</kbd> to finish</td><td><kbd>gl</kbd></td><td>next Logic</td><td><kbd>shift</kbd> + drag ↑ ↓</td><td>Ratchet</td></tr>
+        <tr><td><kbd>l</kbd> on the Channel list</td><td>back into the row</td><td><kbd>R</kbd></td><td>randomise the field</td><td><kbd>gf</kbd></td><td>toggle Flop</td><td><kbd>alt</kbd> + drag</td><td>Chance</td></tr>
+        <tr><td><kbd>0</kbd> <kbd>$</kbd></td><td>first / last field</td><td><kbd>U</kbd> <kbd>ctrl</kbd>+<kbd>r</kbd></td><td>undo / redo</td><td><kbd>[</kbd> <kbd>]</kbd></td><td>previous / next Save Slot</td><td>drag a loop bracket</td><td>Length</td></tr>
+        <tr><td><kbd>gg</kbd> <kbd>G</kbd> <kbd>3</kbd><kbd>G</kbd></td><td>top / bottom / row 3</td><td><kbd>+</kbd> <kbd>-</kbd></td><td>also value up / down</td><td><kbd>space</kbd></td><td>play / stop (stop resets)</td><td>drag in the step strip</td><td>Divide</td></tr>
+        <tr><td><kbd>gt</kbd> <kbd>gT</kbd> <kbd>3</kbd><kbd>gt</kbd></td><td>next / previous / Channel III</td><td></td><td></td><td></td><td></td><td>scroll a field, click a label</td><td>nudge, randomise</td></tr>
       </table>
       <p>
         In a lane: tall bars are Events, short bars are Ratchet repeats, darker bars with a tail are Burst repeats, hollow bars were blocked by Chance.

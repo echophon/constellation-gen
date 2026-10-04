@@ -10,7 +10,9 @@ import {
   type Pattern,
   type SaveSlot,
 } from '../engine/index';
-import { Blips } from './audio';
+import { moveCursor, parseKey, type Action, type Cursor } from './keys';
+import { buildVoiceEditor } from './voiceEditor';
+import { Voices } from './voices';
 import { GUTTER, ROMAN, SPAN, draw, handleAt, ink, layout, shapeOf, timeAt, type Geometry, type Handle } from './scope';
 import { HORIZON, Timeline } from './timeline';
 
@@ -25,25 +27,28 @@ let channel = 0;
 let timeline = new Timeline(bank[0]!);
 let playing = false;
 let stoppedAt = 0;
-let blips: Blips | null = null;
+let voices: Voices | null = null;
+/** Whether each Channel's gate is open as of the last thing scheduled. */
+const gate: boolean[] = new Array<boolean>(8).fill(false);
 let startedAt = 0;
 let scheduledTo = 0;
 const undo: { slot: number; text: string }[] = [];
+const redo: { slot: number; text: string }[] = [];
 
 const slot = () => bank[slotIndex]!;
 const chan = () => slot().channels[channel]!;
 
 function position(): number {
-  if (!playing || !blips) return stoppedAt;
-  return secondsToPulses(slot().clock, blips.now - startedAt) % HORIZON;
+  if (!playing || !voices) return stoppedAt;
+  return secondsToPulses(slot().clock, voices.now - startedAt) % HORIZON;
 }
 
 /** Keeps the playhead where it is when the tempo or the Save Slot changes under it. */
 function reanchor(pos: number) {
-  if (playing && blips) {
-    startedAt = blips.now - pulsesToSeconds(slot().clock, pos);
-    scheduledTo = pos;
-  }
+  // scheduledTo is left alone: voices already queued for the next ~120 ms stay
+  // as they are, and the change is heard from there on. Rewinding it would
+  // queue the same voices again on every edit.
+  if (playing && voices) startedAt = voices.now - pulsesToSeconds(slot().clock, pos);
 }
 
 // ---------- editing ----------
@@ -55,6 +60,7 @@ const maxBurst = (p: Pattern) => (p.events > 0 ? Math.max(1, Math.floor(p.length
 function checkpoint() {
   undo.push({ slot: slotIndex, text: serializeSaveSlot(slot()) });
   if (undo.length > 200) undo.shift();
+  redo.length = 0;
 }
 
 /** Applies a change to the Save Slot under edit and re-renders. */
@@ -108,6 +114,8 @@ const PATTERN_FIELDS: [keyof Pattern, string, (p: Pattern) => [number, number]][
   ['chance', 'chance', () => [0, 100]],
 ];
 
+const LOGICS: Logic[] = ['AND', 'OR', 'XOR'];
+
 const CHANNEL_FIELDS: [keyof Channel, string, number, number][] = [
   ['width', 'width', 1, 100],
   ['ratchet', 'clock ×', 1, 255],
@@ -121,6 +129,7 @@ const header = document.getElementById('header')!;
 const controls = document.getElementById('controls')!;
 const canvas = document.getElementById('scope') as HTMLCanvasElement;
 const g = canvas.getContext('2d')!;
+const status = document.getElementById('status')!;
 let geo: Geometry;
 /** Run after every edit to bring field values and ranges up to date without rebuilding them. */
 let refreshers: (() => void)[] = [];
@@ -132,6 +141,27 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string,
   return node;
 }
 
+/** One stop for the keyboard cursor: a number field, a toggle, or the Logic selector. */
+interface Cell {
+  name: string;
+  /** Present on number fields, which can also be typed into. */
+  input?: HTMLInputElement;
+  box: HTMLElement;
+  get: () => number;
+  range: () => [number, number];
+  /** Sets the value, clamped to its range, as one edit. */
+  commit: (v: number) => void;
+}
+
+/**
+ * Row 0 is the Channel strip: Logic, flop, mute, then its number fields.
+ * Rows 1-8 are Patterns: the mute toggle, then the number fields if unmuted.
+ */
+let grid: Cell[][] = [];
+let cursor: Cursor = { level: 'pattern', row: 1, col: 1 };
+/** Set while cells are being built, so each lands in the right row. */
+let buildingRow: Cell[] | null = null;
+
 /** A labelled number field. Scroll or type to change; click the label to randomise. */
 function numberCell(name: string, get: () => number, range: () => [number, number], set: (v: number) => void) {
   const input = el('input', { type: 'number' });
@@ -139,14 +169,31 @@ function numberCell(name: string, get: () => number, range: () => [number, numbe
     const [lo, hi] = range();
     edit(() => set(clamp(v, lo, hi)));
   };
-  input.onfocus = checkpoint;
+  const row = buildingRow;
+  // Typing 16 passes through 1. Each keystroke is applied to the Save Slot as it
+  // was when typing began, so the intermediate value cannot clamp its neighbours.
+  let before: string | null = null;
+  input.onfocus = () => {
+    checkpoint();
+    before = serializeSaveSlot(slot());
+    if (row) {
+      cursor = { level: 'pattern', row: grid.indexOf(row), col: row.findIndex((c) => c.input === input) };
+      refresh();
+    }
+  };
+  input.onkeydown = (e) => {
+    if (e.key === 'Escape' || e.key === 'Enter') input.blur();
+  };
   input.oninput = () => {
-    if (input.value !== '' && !Number.isNaN(input.valueAsNumber)) commit(input.valueAsNumber);
+    if (input.value === '' || Number.isNaN(input.valueAsNumber)) return;
+    if (before) bank[slotIndex] = parseSaveSlot(before);
+    commit(input.valueAsNumber);
   };
   input.onwheel = (e) => {
     e.preventDefault();
     if (document.activeElement !== input) checkpoint();
     commit(get() + (e.deltaY < 0 ? 1 : -1));
+    before = serializeSaveSlot(slot());
   };
   const random = el('button', { textContent: name, title: `Randomise ${name}` });
   random.onclick = () => {
@@ -160,7 +207,9 @@ function numberCell(name: string, get: () => number, range: () => [number, numbe
     input.max = String(hi);
     if (document.activeElement !== input || input.valueAsNumber !== get()) input.value = String(get());
   });
-  return el('div', { className: 'cell' }, random, input);
+  const box = el('div', { className: 'cell' }, random, input);
+  row?.push({ name, input, box, get, range, commit });
+  return box;
 }
 
 function toggle(text: string, get: () => boolean, set: (on: boolean) => void, title = '') {
@@ -171,10 +220,21 @@ function toggle(text: string, get: () => boolean, set: (on: boolean) => void, ti
     build();
   };
   refreshers.push(() => b.classList.toggle('on', get()));
+  buildingRow?.push({
+    name: text,
+    box: b,
+    get: () => (get() ? 1 : 0),
+    range: () => [0, 1],
+    commit: (v) => {
+      edit(() => set(v > 0));
+      build();
+    },
+  });
   return b;
 }
 
 function buildHeader() {
+  buildingRow = null;
   const play = el('button', { textContent: 'play', title: 'Space' });
   play.onclick = togglePlay;
   refreshers.push(() => {
@@ -190,7 +250,7 @@ function buildHeader() {
     refreshers.push(() => b.classList.toggle('on', i === slotIndex));
     slots.append(b);
   });
-  const undoBtn = el('button', { textContent: 'undo', title: 'Cmd/Ctrl+Z' });
+  const undoBtn = el('button', { textContent: 'undo', title: 'U, or Cmd/Ctrl+Z' });
   undoBtn.onclick = undoLast;
   const save = el('button', { textContent: 'download', title: 'Download this Save Slot as NN.TXT' });
   save.onclick = () => {
@@ -212,9 +272,11 @@ function buildHeader() {
 
 function buildControls() {
   const rows: HTMLElement[] = [];
+  grid = [[]];
+  buildingRow = grid[0]!;
 
   const logic = el('div', { className: 'seg' });
-  for (const op of ['AND', 'OR', 'XOR'] as Logic[]) {
+  for (const op of LOGICS) {
     const b = el('button', { textContent: op });
     b.onclick = () => {
       checkpoint();
@@ -223,6 +285,13 @@ function buildControls() {
     refreshers.push(() => b.classList.toggle('on', chan().logic === op));
     logic.append(b);
   }
+  buildingRow.push({
+    name: 'logic',
+    box: logic,
+    get: () => LOGICS.indexOf(chan().logic),
+    range: () => [0, LOGICS.length - 1],
+    commit: (v) => edit(() => (chan().logic = LOGICS[v]!)),
+  });
   const title = el('span', { className: 'title', textContent: `Channel ${ROMAN[channel]}` });
   title.style.color = ink.event(channel);
   const strip = el(
@@ -236,24 +305,24 @@ function buildControls() {
       numberCell(name, () => chan()[key] as number, () => [lo, hi], (v) => ((chan()[key] as number) = v)),
     ),
   );
-  strip.style.top = `${geo.stripY}px`;
   rows.push(strip);
 
-  for (const row of geo.rows) {
-    if (row.kind !== 'pattern' && row.kind !== 'muted') continue;
-    const p = row.index;
+  chan().patterns.forEach((_, p) => {
+    buildingRow = [];
+    grid.push(buildingRow);
     const pat = () => chan().patterns[p]!;
     const on = toggle(`P${p + 1}`, () => !pat().mute, (unmuted) => setPattern(pat(), 'mute', unmuted ? 0 : 1), 'Mute or unmute this Pattern');
     on.classList.add('pbtn');
     const line = el('div', {}, on);
-    if (row.kind === 'pattern') {
+    if (pat().mute) line.append(el('span', { className: 'note', textContent: 'muted' }));
+    else {
       for (const [key, name, range] of PATTERN_FIELDS) {
         line.append(numberCell(name, () => pat()[key], () => range(pat()), (v) => setPattern(pat(), key, v)));
       }
     }
-    line.style.top = `${row.y + (row.h - (row.kind === 'pattern' ? 40 : 20)) / 2}px`;
     rows.push(line);
-  }
+  });
+  buildingRow = null;
   controls.replaceChildren(...rows);
 }
 
@@ -268,6 +337,12 @@ function build() {
 
 function refresh() {
   for (const r of refreshers) r();
+  cursor.row = Math.min(cursor.row, grid.length - 1);
+  cursor.col = Math.min(cursor.col, Math.max(0, grid[cursor.row]!.length - 1));
+  const inFields = cursor.level === 'pattern';
+  grid.forEach((row, r) => row.forEach((cell, c) => cell.box.classList.toggle('cursor', inFields && r === cursor.row && c === cursor.col)));
+  controls.querySelector('.title')?.classList.toggle('cursor', !inFields);
+  status.textContent = pending;
 }
 
 function resize() {
@@ -287,13 +362,15 @@ function resize() {
 
 function togglePlay() {
   if (!playing) {
-    blips ??= new Blips();
-    void blips.ctx.resume();
+    voices ??= new Voices();
+    void voices.resume();
     playing = true;
     reanchor(stoppedAt);
+    scheduledTo = stoppedAt;
   } else {
     playing = false;
     stoppedAt = 0; // stop is also Reset
+    closeGates();
   }
   refresh();
 }
@@ -312,32 +389,54 @@ function select(c: number) {
   build();
 }
 
-function undoLast() {
-  const last = undo.pop();
+function restore(from: typeof undo, to: typeof undo) {
+  const last = from.pop();
   if (!last) return;
   const pos = position();
+  to.push({ slot: last.slot, text: serializeSaveSlot(bank[last.slot]!) });
   slotIndex = last.slot;
   bank[slotIndex] = parseSaveSlot(last.text);
   timeline = new Timeline(slot());
   reanchor(pos);
   build();
 }
+const undoLast = () => restore(undo, redo);
+const redoLast = () => restore(redo, undo);
 
 function schedule() {
-  if (!playing || !blips) return;
+  if (!playing || !voices) return;
   const clock = slot().clock;
   const loop = pulsesToSeconds(clock, HORIZON);
-  const elapsed = blips.now - startedAt;
+  const elapsed = voices.now - startedAt;
   const base = Math.floor(elapsed / loop) * loop;
   const now = secondsToPulses(clock, elapsed - base);
   if (now < scheduledTo - 1) scheduledTo = 0; // wrapped past the horizon
   const from = Math.max(scheduledTo, now);
   const to = Math.min(HORIZON, secondsToPulses(clock, elapsed - base + 0.12));
   if (to <= from) return;
+  const at = (t: number) => startedAt + base + pulsesToSeconds(clock, t);
   for (let c = 0; c < 8; c++) {
-    for (const t of timeline.rises(c, from, to)) blips.play(c, startedAt + base + pulsesToSeconds(clock, t));
+    // An edit, a Save Slot switch or the loop wrapping can leave a gate open
+    // that the timeline now says is closed, or the reverse. Settle it first.
+    const expected = timeline.levelBefore(c, from);
+    if (expected !== gate[c]) {
+      voices.gate(c, expected, at(from));
+      gate[c] = expected;
+    }
+    for (const e of timeline.edges(c, from, to)) {
+      voices.gate(c, e.high, at(e.t));
+      gate[c] = e.high;
+    }
   }
   scheduledTo = to;
+}
+
+function closeGates() {
+  if (!voices) return;
+  for (let c = 0; c < 8; c++) {
+    if (gate[c]) voices.gate(c, false, voices.now);
+    gate[c] = false;
+  }
 }
 
 // ---------- pointer: drag on a lane ----------
@@ -362,8 +461,6 @@ let drag: {
   start: Pattern;
 } | null = null;
 
-const status = document.getElementById('status')!;
-
 const pointer = (e: PointerEvent) => {
   const box = canvas.getBoundingClientRect();
   return { x: e.clientX - box.left, y: e.clientY - box.top };
@@ -372,12 +469,16 @@ const pointer = (e: PointerEvent) => {
 canvas.onpointerdown = (e) => {
   const { x, y } = pointer(e);
   const row = geo.rows.find((r) => y >= r.y && y < r.y + r.h);
-  if (row?.kind === 'overview') return select(row.index);
+  if (row?.kind === 'overview') {
+    cursor = { ...cursor, level: 'channel' };
+    return select(row.index);
+  }
   const handle = handleAt(geo, slot(), channel, x, y);
   if (!handle) return;
   const pat = chan().patterns[handle.pattern]!;
   const { loop, delay, step } = shapeOf(slot(), channel, pat);
   const t = timeAt(geo, x);
+  cursor = { level: 'pattern', row: handle.pattern + 1, col: cursor.col };
   checkpoint();
   canvas.setPointerCapture(e.pointerId);
   const anchor =
@@ -415,7 +516,7 @@ canvas.onpointermove = (e) => {
   const stepPx = Math.max(12, ((geo.right - GUTTER) / SPAN) * step);
   switch (d.param) {
     case 'rotate':
-      return set('rotate', (((d.start.rotate + Math.round((t - d.t0) / step)) % len) + len) % len);
+      return set('rotate', clamp(d.start.rotate + (t - d.t0) / step, 0, len - 1));
     case 'events':
       return set('events', clamp(d.start.events + dy / 8, 0, pat.length));
     case 'burst':
@@ -432,26 +533,131 @@ canvas.onpointerup = canvas.onpointercancel = () => {
   status.textContent = '';
 };
 
+// ---------- keyboard: vim-style motions over the grid of fields ----------
+
+/** Keys typed so far that are waiting for the rest of a command: a count, or g / y. */
+let pending = '';
+let lastBump = 1;
+let yankedPattern: Pattern | null = null;
+let yankedChannel: string | null = null;
+
+const cell = () => (cursor.level === 'pattern' ? grid[cursor.row]?.[cursor.col] : undefined);
+const cursorPattern = () => (cursor.level === 'pattern' && cursor.row > 0 ? chan().patterns[cursor.row - 1]! : null);
+const wrap = (v: number, n: number) => ((v % n) + n) % n;
+
+function bump(delta: number) {
+  const c = cell();
+  if (!c) return;
+  lastBump = delta;
+  const [lo, hi] = c.range();
+  const next = clamp(c.get() + delta, lo, hi);
+  if (next === c.get()) return;
+  checkpoint();
+  c.commit(next);
+}
+
+function run(action: Action) {
+  switch (action.type) {
+    case 'move':
+    case 'goto': {
+      const next = moveCursor(cursor, channel, action, grid.map((row) => row.length));
+      cursor = next.cursor;
+      if (next.channel !== channel) select(next.channel);
+      return;
+    }
+    case 'bump':
+      return bump(action.delta);
+    case 'repeat':
+      return bump(lastBump);
+    case 'type': {
+      const input = cell()?.input;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+      return;
+    }
+    case 'random': {
+      const c = cell();
+      if (!c) return;
+      const [lo, hi] = c.range();
+      checkpoint();
+      return c.commit(lo + Math.floor(Math.random() * (hi - lo + 1)));
+    }
+    case 'mute': {
+      // On a Pattern row this mutes the Pattern; on the Channel list or strip, the Channel.
+      const pat = cursorPattern();
+      checkpoint();
+      edit(() => (pat ? setPattern(pat, 'mute', pat.mute ? 0 : 1) : (chan().mute = chan().mute ? 0 : 1)));
+      return build();
+    }
+    case 'undo':
+      return undoLast();
+    case 'redo':
+      return redoLast();
+    case 'yankPattern': {
+      const pat = cursorPattern();
+      if (pat) yankedPattern = { ...pat };
+      return;
+    }
+    case 'pastePattern': {
+      const pat = cursorPattern();
+      if (!pat || !yankedPattern) return;
+      const copy = yankedPattern;
+      checkpoint();
+      edit(() => Object.assign(pat, copy));
+      return build();
+    }
+    case 'yankChannel':
+      yankedChannel = JSON.stringify(chan());
+      return;
+    case 'pasteChannel': {
+      if (!yankedChannel) return;
+      const copy = JSON.parse(yankedChannel) as Channel;
+      checkpoint();
+      edit(() => (slot().channels[channel] = copy));
+      return build();
+    }
+    case 'channel':
+      return select(action.index);
+    case 'channelBy':
+      return select(wrap(channel + action.delta, 8));
+    case 'logic':
+      checkpoint();
+      return edit(() => (chan().logic = LOGICS[(LOGICS.indexOf(chan().logic) + 1) % LOGICS.length]!));
+    case 'flop':
+      checkpoint();
+      return edit(() => (chan().flop = chan().flop ? 0 : 1));
+    case 'slotBy':
+      return loadSlot(wrap(slotIndex + action.delta, bank.length));
+    case 'play':
+      return togglePlay();
+  }
+}
+
 window.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
     e.preventDefault();
-    return undoLast();
+    return e.shiftKey ? redoLast() : undoLast();
   }
-  if ((e.target as HTMLElement).matches('input, textarea, [contenteditable]')) return;
-  if (e.key === ' ') {
-    e.preventDefault();
-    togglePlay();
-  } else if (/^[1-8]$/.test(e.key)) select(parseInt(e.key, 10) - 1);
+  if (e.metaKey || (e.target as HTMLElement).matches('input, select, textarea, [contenteditable]')) return;
+  if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt') return;
+  const result = parseKey(pending, e.key, e.ctrlKey);
+  pending = result.pending;
+  if (result.handled) e.preventDefault();
+  if (result.action) run(result.action);
+  refresh();
 });
 
 function frame() {
   schedule();
   const pos = position();
   geo = { ...geo, page: Math.floor(pos / SPAN) * SPAN };
-  draw(g, geo, { slot: slot(), timeline, channel, pos });
+  draw(g, geo, { slot: slot(), timeline, channel, pos, focus: cursor });
   requestAnimationFrame(frame);
 }
 
 window.addEventListener('resize', build);
+buildVoiceEditor(document.getElementById('voice-editor')!);
 build();
 frame();
