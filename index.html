@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Constellation</title>
+    <link rel="stylesheet" href="/src/app/style.css" />
+  </head>
+  <body>
+    <header id="header"></header>
+    <main id="stage">
+      <canvas id="scope"></canvas>
+      <div id="controls"></div>
+    </main>
+    <footer id="legend">
+      <div id="status"></div>
+      <table>
+        <tr><th colspan="2">Drag on a Pattern lane</th><th colspan="2">Fields</th><th colspan="2">Keys</th></tr>
+        <tr><td><kbd>drag</kbd> ← →</td><td>Rotate</td><td>type or scroll</td><td>change a value</td><td><kbd>space</kbd></td><td>play / stop (stop resets)</td></tr>
+        <tr><td><kbd>drag</kbd> ↑ ↓</td><td>Events</td><td>click a label</td><td>randomise that value</td><td><kbd>1</kbd>–<kbd>8</kbd></td><td>select Channel</td></tr>
+        <tr><td><kbd>shift</kbd> + drag ← →</td><td>Burst</td><td><kbd>P1</kbd>–<kbd>P8</kbd></td><td>mute / unmute Pattern</td><td><kbd>cmd/ctrl</kbd> + <kbd>Z</kbd></td><td>undo</td></tr>
+        <tr><td><kbd>shift</kbd> + drag ↑ ↓</td><td>Ratchet</td><td>overview row</td><td>click to select Channel</td><td></td><td></td></tr>
+        <tr><td><kbd>alt</kbd> + drag</td><td>Chance</td><td>Save Slot 00–19</td><td>switch in sync</td><td></td><td></td></tr>
+        <tr><td>drag a loop bracket</td><td>Length</td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>drag in the step strip</td><td>Divide</td><td></td><td></td><td></td><td></td></tr>
+      </table>
+      <p>
+        In a lane: tall bars are Events, short bars are Ratchet repeats, darker bars with a tail are Burst repeats, hollow bars were blocked by Chance.
+        Dashed outlines show where the Events sat before Rotate. The bracket marks each loop start; numbered cells underneath are steps, wider when divided.
+      </p>
+    </footer>
+    <script type="module" src="/src/app/main.ts"></script>
+  </body>
+</html>

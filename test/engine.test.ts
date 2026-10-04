@@ -7,7 +7,9 @@ import {
   defaultSaveSlot,
   euclid,
   parseSaveSlot,
+  patternEvents,
   patternPulses,
+  patternStepKinds,
   patternSteps,
   pulsesToSeconds,
   secondsToPulses,
@@ -121,6 +123,28 @@ describe('Pattern Pulses', () => {
     expect(a.length).toBeLessThan(580);
     expect(patternPulses(slot, 0, 0, 0, 1000, { seed: 7 })).toEqual(a);
     expect(patternPulses(slot, 0, 0, 0, 1000, { seed: 8 })).not.toEqual(a);
+  });
+});
+
+describe('Pattern Events', () => {
+  it('tells core Events from Burst repeats', () => {
+    expect(patternStepKinds(pat({ events: 2, burst: 3 }))).toEqual(['event', 'burst', 'burst', null, 'event', 'burst', 'burst', null]);
+    // A Burst repeat landing on a core Event stays a core Event.
+    expect(patternStepKinds(pat({ length: 4, events: 2, burst: 4 }))).toEqual(['event', 'burst', 'event', 'burst']);
+  });
+
+  it('labels Ratchet repeats and keeps the Events Chance blocked', () => {
+    const slot = slotWith([{ length: 4, burst: 2, ratchet: 2, chance: 50 }]);
+    const events = patternEvents(slot, 0, 0, 0, 3.99, { seed: 5 });
+    expect(events.map((e) => [e.step, e.ratchet, e.burst])).toEqual([
+      [0, 0, false],
+      [0, 1, false],
+      [1, 0, true],
+      [1, 1, true],
+    ]);
+    const all = patternEvents(slot, 0, 0, 0, 400, { seed: 5 });
+    expect(all.some((e) => !e.passed)).toBe(true);
+    expect(all.filter((e) => e.passed)).toHaveLength(patternPulses(slot, 0, 0, 0, 400, { seed: 5 }).length);
   });
 });
 

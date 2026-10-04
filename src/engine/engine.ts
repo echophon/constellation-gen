@@ -1,5 +1,5 @@
 import type { Channel, Pattern, SaveSlot } from '../format/saveSlot';
-import { patternSteps } from './euclid';
+import { patternStepKinds } from './euclid';
 
 // All times are in Main Clock pulses since Reset. Windows are half-open:
 // [from, to). See ASSUMPTIONS.md for what is taken from the manual and not
@@ -57,6 +57,58 @@ function patternTiming(channel: Channel, pattern: Pattern): PatternTiming | null
   return { step, ratchet, pulse: (step / ratchet) * width, delay: (channel.rotate / 100) * channelStep };
 }
 
+/** One Event of a Pattern, shaped into its Pulse, before merging with its neighbours. */
+export interface PatternEvent extends Interval {
+  /** Pattern Clock step since Reset. */
+  step: number;
+  /** Position within the step's Ratchet group; 0 is the Event itself. */
+  ratchet: number;
+  /** True when Burst put this step here, false for a core euclidean Event. */
+  burst: boolean;
+  /** False when Chance blocked it. */
+  passed: boolean;
+}
+
+/**
+ * Every Event of one Pattern whose Pulse overlaps [from, to], including the
+ * ones Chance blocked. Ignores the Pattern's own Mute.
+ */
+export function patternEvents(
+  slot: SaveSlot,
+  channelIndex: number,
+  patternIndex: number,
+  from: number,
+  to: number,
+  options: RenderOptions = {},
+): PatternEvent[] {
+  const channel = slot.channels[channelIndex]!;
+  const pattern = channel.patterns[patternIndex]!;
+  const timing = patternTiming(channel, pattern);
+  if (!timing || timing.pulse <= 0) return [];
+
+  const kinds = patternStepKinds(pattern);
+  const { step, ratchet, pulse, delay } = timing;
+  const sub = step / ratchet;
+  const seed = options.seed ?? 0;
+  const chance = Math.min(100, Math.max(0, pattern.chance)) / 100;
+
+  const first = Math.max(0, Math.floor((from - delay - pulse) / step) - 1);
+  const last = Math.ceil((to - delay) / step);
+  const out: PatternEvent[] = [];
+  for (let k = first; k <= last; k++) {
+    const kind = kinds[k % kinds.length];
+    if (!kind) continue;
+    for (let j = 0; j < ratchet; j++) {
+      const start = k * step + j * sub + delay;
+      const end = start + pulse;
+      if (end < from - EPS || start > to + EPS) continue;
+      const passed = chance >= 1 || chanceRoll(seed, channelIndex, patternIndex, k * ratchet + j) < chance;
+      out.push({ start, end, step: k, ratchet: j, burst: kind === 'burst', passed });
+    }
+  }
+  return out;
+}
+
 /**
  * The Pulses of one Pattern that overlap [from, to], with touching Pulses
  * merged. Ignores the Pattern's own Mute.
@@ -69,31 +121,12 @@ export function patternPulses(
   to: number,
   options: RenderOptions = {},
 ): Interval[] {
-  const channel = slot.channels[channelIndex]!;
-  const pattern = channel.patterns[patternIndex]!;
-  const timing = patternTiming(channel, pattern);
-  if (!timing || timing.pulse <= 0) return [];
-
-  const steps = patternSteps(pattern);
-  const { step, ratchet, pulse, delay } = timing;
-  const sub = step / ratchet;
-  const seed = options.seed ?? 0;
-  const chance = Math.min(100, Math.max(0, pattern.chance)) / 100;
-
-  const first = Math.max(0, Math.floor((from - delay - pulse) / step) - 1);
-  const last = Math.ceil((to - delay) / step);
   const out: Interval[] = [];
-  for (let k = first; k <= last; k++) {
-    if (!steps[k % steps.length]) continue;
-    for (let j = 0; j < ratchet; j++) {
-      const start = k * step + j * sub + delay;
-      const end = start + pulse;
-      if (end < from - EPS || start > to + EPS) continue;
-      if (chance < 1 && chanceRoll(seed, channelIndex, patternIndex, k * ratchet + j) >= chance) continue;
-      const prev = out[out.length - 1];
-      if (prev && start <= prev.end + EPS) prev.end = Math.max(prev.end, end);
-      else out.push({ start, end });
-    }
+  for (const e of patternEvents(slot, channelIndex, patternIndex, from, to, options)) {
+    if (!e.passed) continue;
+    const prev = out[out.length - 1];
+    if (prev && e.start <= prev.end + EPS) prev.end = Math.max(prev.end, e.end);
+    else out.push({ start: e.start, end: e.end });
   }
   return out;
 }

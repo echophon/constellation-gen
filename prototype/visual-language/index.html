@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PROTOTYPE: visual language</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0b0d12; color: #cfd6e4; font: 13px/1.4 ui-monospace, Menlo, monospace; overflow: hidden; }
+      header { display: flex; gap: 12px; align-items: center; padding: 8px 12px; flex-wrap: wrap; }
+      button { background: #1a1f2b; color: inherit; border: 1px solid #2c3445; border-radius: 4px; padding: 3px 7px; font: inherit; cursor: pointer; }
+      button.on { background: #cfd6e4; color: #0b0d12; }
+      #slots { display: flex; gap: 3px; flex-wrap: wrap; }
+      #state { padding: 0 12px 6px; color: #8b95a8; white-space: pre; min-height: 5.6em; }
+      canvas { display: block; }
+      #switcher { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); background: #ffd400; color: #000; border-radius: 999px; padding: 6px 10px; display: flex; gap: 10px; align-items: center; box-shadow: 0 4px 18px #000a; font-weight: 600; }
+      #switcher button { background: #000; color: #ffd400; border: 0; border-radius: 999px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>PROTOTYPE</strong>
+      <button id="play">play</button>
+      <button id="sound" class="on">sound</button>
+      <span>Save Slot</span>
+      <div id="slots"></div>
+      <span>Channel: click it or press 1-8</span>
+    </header>
+    <div id="state"></div>
+    <canvas id="c"></canvas>
+    <div id="switcher"><button id="prev">←</button><span id="label"></span><button id="next">→</button></div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

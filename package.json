@@ -5,12 +5,16 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "render": "tsx scripts/render.ts"
+    "render": "tsx scripts/render.ts",
+    "proto:visual": "vite prototype/visual-language --open",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
+    "vite": "^8.3.2",
     "vitest": "^5.0.3"
   }
 }
